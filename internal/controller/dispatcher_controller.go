@@ -299,6 +299,12 @@ func (r *DispatcherReconciler) deliverTask(ctx context.Context, mailbox *karov1a
 		return fmt.Errorf("mailbox %s is full (%d/%d)", mailbox.Name, mailbox.Status.PendingCount, maxPending)
 	}
 
+	// Read prior failure notes from TaskGraph status if available.
+	var priorFailureNotes string
+	if ts, ok := tg.Status.TaskStatuses[task.ID]; ok {
+		priorFailureNotes = ts.FailureNotes
+	}
+
 	payload := karov1alpha1.TaskAssignedPayload{
 		TaskGraphRef:       corev1.LocalObjectReference{Name: tg.Name},
 		TaskID:             task.ID,
@@ -308,6 +314,7 @@ func (r *DispatcherReconciler) deliverTask(ctx context.Context, mailbox *karov1a
 		AcceptanceCriteria: task.AcceptanceCriteria,
 		EvalGateEnabled:    task.EvalGate != nil,
 		Priority:           task.Priority,
+		PriorFailureNotes:  priorFailureNotes,
 		SkillPrompt:        skillPrompt,
 	}
 

@@ -32,6 +32,18 @@ rules:
   - list
   - watch
 - apiGroups:
+  - batch
+  resources:
+  - cronjobs
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - karo.dev
   resources:
   - agentchannels

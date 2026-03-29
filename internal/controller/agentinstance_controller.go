@@ -7,6 +7,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -28,6 +29,8 @@ import (
 // +kubebuilder:rbac:groups=karo.dev,resources=memorystores,verbs=get;list;watch
 // +kubebuilder:rbac:groups=karo.dev,resources=toolsets,verbs=get;list;watch
 // +kubebuilder:rbac:groups=karo.dev,resources=sandboxclasses,verbs=get;list;watch
+// +kubebuilder:rbac:groups=karo.dev,resources=agentmailboxes,verbs=get;list;watch
+// +kubebuilder:rbac:groups=karo.dev,resources=agentmailboxes/status,verbs=get
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;create;update;patch;delete
 
 // EffectiveBindings holds the resolved resource references for an AgentInstance,
@@ -93,6 +96,48 @@ func (r *AgentInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	bindings, err := r.resolveEffectiveBindings(ctx, &agentSpec)
 	if err != nil {
 		logger.Error(err, "failed to resolve effective bindings")
+	}
+
+	// OnDemand startPolicy: do not create a pod until there are pending mailbox messages.
+	if agentSpec.Spec.Scaling.StartPolicy == karov1alpha1.StartPolicyOnDemand {
+		mailboxName := fmt.Sprintf("%s-mailbox", agentSpec.Name)
+		var mailbox karov1alpha1.AgentMailbox
+		mailboxKey := types.NamespacedName{Name: mailboxName, Namespace: instance.Namespace}
+		if err := r.Get(ctx, mailboxKey, &mailbox); err != nil {
+			// If mailbox not found, treat as no messages.
+			if instance.Status.Phase == "" || instance.Status.Phase == karov1alpha1.AgentInstancePhasePending {
+				instance.Status.Phase = karov1alpha1.AgentInstancePhaseHibernated
+				setCondition(&instance.Status.Conditions, metav1.Condition{
+					Type:               "Ready",
+					Status:             metav1.ConditionFalse,
+					ObservedGeneration: instance.Generation,
+					LastTransitionTime: metav1.Now(),
+					Reason:             "OnDemandNoMailbox",
+					Message:            "OnDemand: mailbox not found, hibernating",
+				})
+				if statusErr := r.Status().Update(ctx, &instance); statusErr != nil {
+					return ctrl.Result{}, statusErr
+				}
+				return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+			}
+		} else if mailbox.Status.PendingCount == 0 {
+			// No pending messages — hibernate if not already running.
+			if instance.Status.Phase == "" || instance.Status.Phase == karov1alpha1.AgentInstancePhasePending {
+				instance.Status.Phase = karov1alpha1.AgentInstancePhaseHibernated
+				setCondition(&instance.Status.Conditions, metav1.Condition{
+					Type:               "Ready",
+					Status:             metav1.ConditionFalse,
+					ObservedGeneration: instance.Generation,
+					LastTransitionTime: metav1.Now(),
+					Reason:             "OnDemandNoMessages",
+					Message:            "OnDemand: no pending messages, hibernating",
+				})
+				if statusErr := r.Status().Update(ctx, &instance); statusErr != nil {
+					return ctrl.Result{}, statusErr
+				}
+				return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+			}
+		}
 	}
 
 	// Build and ensure Pod exists
@@ -321,6 +366,19 @@ func (r *AgentInstanceReconciler) buildPod(instance *karov1alpha1.AgentInstance,
 	sidecar := corev1.Container{
 		Name:  "agent-runtime-mcp",
 		Image: "ghcr.io/karo-dev/agent-runtime-mcp:latest",
+		Ports: []corev1.ContainerPort{
+			{Name: "debug", ContainerPort: 9091, Protocol: corev1.ProtocolTCP},
+		},
+		Resources: corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("50m"),
+				corev1.ResourceMemory: resource.MustParse("64Mi"),
+			},
+			Limits: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("200m"),
+				corev1.ResourceMemory: resource.MustParse("128Mi"),
+			},
+		},
 		Env: []corev1.EnvVar{
 			{Name: "KARO_AGENT_INSTANCE", Value: instance.Name},
 			{Name: "KARO_AGENT_SPEC", Value: agentSpec.Name},
@@ -346,6 +404,27 @@ func (r *AgentInstanceReconciler) buildPod(instance *karov1alpha1.AgentInstance,
 		mainContainer.VolumeMounts = append(mainContainer.VolumeMounts, corev1.VolumeMount{
 			Name: "home", MountPath: "/root",
 		})
+	}
+
+	// Mount agentConfigFiles from ConfigMaps.
+	for _, acf := range agentSpec.Spec.AgentConfigFiles {
+		if acf.Source.ConfigMapRef != nil {
+			volName := fmt.Sprintf("agent-config-%s", acf.Name)
+			volumes = append(volumes, corev1.Volume{
+				Name: volName,
+				VolumeSource: corev1.VolumeSource{
+					ConfigMap: &corev1.ConfigMapVolumeSource{
+						LocalObjectReference: corev1.LocalObjectReference{
+							Name: acf.Source.ConfigMapRef.Name,
+						},
+					},
+				},
+			})
+			mainContainer.VolumeMounts = append(mainContainer.VolumeMounts, corev1.VolumeMount{
+				Name:      volName,
+				MountPath: acf.MountPath,
+			})
+		}
 	}
 
 	pod := &corev1.Pod{
