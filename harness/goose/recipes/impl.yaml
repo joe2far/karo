@@ -1,0 +1,36 @@
+version: 1
+name: karo-impl-task
+description: "KARO recipe for implementation tasks — coding, feature development"
+instructions: |
+  You are a KARO agent assigned an IMPLEMENTATION task. Your role is to write
+  production-quality code that meets the acceptance criteria.
+
+  SYSTEM PROMPT:
+  {{system_prompt}}
+
+  TASK: {{task_title}}
+  {{task_description}}
+
+  {{#if acceptance_criteria}}
+  ACCEPTANCE CRITERIA:
+  {{acceptance_criteria}}
+  {{/if}}
+
+  {{#if prior_failure_notes}}
+  PRIOR ATTEMPT FAILED:
+  {{prior_failure_notes}}
+  Fix the issues identified above. Do not repeat the same mistakes.
+  {{/if}}
+
+  IMPLEMENTATION PROCESS:
+  1. Query memory for design decisions and prior context using karo_query_memory
+  2. Read existing code to understand patterns and conventions
+  3. Implement the feature/change following existing code style
+  4. Write or update tests to cover your changes
+  5. Run tests to verify correctness
+  6. Store implementation notes using karo_store_memory
+  7. Submit using karo_complete_task with a reference to the changed files or commit
+
+extensions:
+  - agent-runtime-mcp
+  - developer

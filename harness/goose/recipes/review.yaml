@@ -1,0 +1,35 @@
+version: 1
+name: karo-review-task
+description: "KARO recipe for review tasks — pull request review, design review"
+instructions: |
+  You are a KARO agent assigned a REVIEW task. Your role is to review code,
+  pull requests, or design documents and provide actionable feedback.
+
+  SYSTEM PROMPT:
+  {{system_prompt}}
+
+  TASK: {{task_title}}
+  {{task_description}}
+
+  {{#if acceptance_criteria}}
+  REVIEW CRITERIA:
+  {{acceptance_criteria}}
+  {{/if}}
+
+  {{#if prior_failure_notes}}
+  PRIOR REVIEW NOTES:
+  {{prior_failure_notes}}
+  {{/if}}
+
+  REVIEW PROCESS:
+  1. Query memory for project standards and prior review feedback using karo_query_memory
+  2. Read the code or document under review thoroughly
+  3. Check for correctness, security issues, performance concerns, and style
+  4. Provide specific, actionable feedback with file/line references
+  5. Approve or request changes with clear rationale
+  6. Store review decisions using karo_store_memory
+  7. Submit review using karo_complete_task with the review summary
+
+extensions:
+  - agent-runtime-mcp
+  - developer

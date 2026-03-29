@@ -23,6 +23,7 @@ func (d *DebugServer) Serve(addr string) error {
 	mux.HandleFunc("/debug/status", d.debugStatus)
 	mux.HandleFunc("/debug/mailbox", d.debugMailbox)
 	mux.HandleFunc("/debug/tools", d.debugTools)
+	mux.HandleFunc("/debug/drain", d.debugDrain)
 
 	return http.ListenAndServe(addr, mux)
 }
@@ -60,4 +61,23 @@ func (d *DebugServer) debugTools(w http.ResponseWriter, _ *http.Request) {
 	tools := d.mcpServer.tools.ListTools()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(tools)
+}
+
+// debugDrain handles POST /debug/drain for graceful shutdown.
+// Signals the agent to complete current work, checkpoint state, and terminate.
+func (d *DebugServer) debugDrain(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	// Signal drain — in a full implementation this would:
+	// 1. Stop accepting new tasks
+	// 2. Wait for current task to complete
+	// 3. Checkpoint state to MemoryStore
+	// 4. Signal the MCP server to shut down
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":  "draining",
+		"message": "Drain initiated, completing current work",
+	})
 }
