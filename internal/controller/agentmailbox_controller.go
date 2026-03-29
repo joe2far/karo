@@ -20,6 +20,8 @@ import (
 // +kubebuilder:rbac:groups=karo.dev,resources=agentmailboxes/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=karo.dev,resources=agentmailboxes/finalizers,verbs=update
 // +kubebuilder:rbac:groups=karo.dev,resources=agentspecs,verbs=get;list;watch
+// +kubebuilder:rbac:groups=karo.dev,resources=agentinstances,verbs=get;list;watch;update;patch
+// +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
 // AgentMailboxReconciler reconciles a AgentMailbox object
 type AgentMailboxReconciler struct {
@@ -75,6 +77,11 @@ func (r *AgentMailboxReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	// Recompute pending count
 	r.recomputeMailboxStatus(&mailbox)
 
+	// If there are pending messages, check for hibernated agents that should be woken.
+	if mailbox.Status.PendingCount > 0 {
+		r.wakeHibernatedAgents(ctx, &mailbox)
+	}
+
 	// Set Active condition
 	activeCondition := metav1.Condition{
 		Type:               "Active",
@@ -123,6 +130,41 @@ func (r *AgentMailboxReconciler) recomputeMailboxStatus(mailbox *karov1alpha1.Ag
 		mailbox.Status.OldestPendingMessage = &oldest
 	} else {
 		mailbox.Status.OldestPendingMessage = nil
+	}
+}
+
+// wakeHibernatedAgents finds hibernated AgentInstances for this mailbox's
+// AgentSpec and transitions them to Pending so the AgentInstance controller
+// will recreate the pod.
+func (r *AgentMailboxReconciler) wakeHibernatedAgents(ctx context.Context, mailbox *karov1alpha1.AgentMailbox) {
+	logger := log.FromContext(ctx)
+
+	var instances karov1alpha1.AgentInstanceList
+	if err := r.List(ctx, &instances, client.InNamespace(mailbox.Namespace)); err != nil {
+		logger.Error(err, "failed to list AgentInstances for wake check")
+		return
+	}
+
+	for i := range instances.Items {
+		inst := &instances.Items[i]
+		if inst.Spec.AgentSpecRef.Name != mailbox.Spec.AgentSpecRef.Name {
+			continue
+		}
+		if inst.Status.Phase != karov1alpha1.AgentInstancePhaseHibernated {
+			continue
+		}
+		if !inst.Spec.Hibernation.ResumeOnMail {
+			continue
+		}
+
+		// Wake the agent by setting phase back to Pending.
+		inst.Status.Phase = karov1alpha1.AgentInstancePhasePending
+		if err := r.Status().Update(ctx, inst); err != nil {
+			logger.Error(err, "failed to wake hibernated agent", "instance", inst.Name)
+			continue
+		}
+		r.Recorder.Eventf(mailbox, corev1.EventTypeNormal, "AgentWoken",
+			"Woke hibernated agent %s due to pending messages", inst.Name)
 	}
 }
 

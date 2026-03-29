@@ -204,13 +204,27 @@ func (r *TaskGraphReconciler) handleTimeouts(tg *karov1alpha1.TaskGraph) {
 
 		deadline := ts.StartedAt.Time.Add(time.Duration(timeoutMinutes) * time.Minute)
 		if now.After(deadline) {
-			ts.Phase = karov1alpha1.TaskPhaseFailed
-			ts.FailureNotes = fmt.Sprintf("Task timed out after %d minutes", timeoutMinutes)
-			nowMeta := metav1.NewTime(now)
-			ts.CompletedAt = &nowMeta
-			tg.Status.TaskStatuses[taskID] = ts
-			r.Recorder.Event(tg, "Warning", "TaskTimeout",
-				fmt.Sprintf("Task %s timed out after %d minutes", taskID, timeoutMinutes))
+			// Check retry policy before failing.
+			maxRetries := tg.Spec.DispatchPolicy.RetryPolicy.MaxRetries
+			if ts.RetryCount < maxRetries {
+				ts.Phase = karov1alpha1.TaskPhaseOpen
+				ts.RetryCount++
+				ts.FailureNotes = fmt.Sprintf("Task timed out after %d minutes (retry %d/%d)", timeoutMinutes, ts.RetryCount, maxRetries)
+				ts.AssignedTo = ""
+				ts.AssignedAt = nil
+				ts.StartedAt = nil
+				tg.Status.TaskStatuses[taskID] = ts
+				r.Recorder.Event(tg, "Warning", "TaskTimeoutRetry",
+					fmt.Sprintf("Task %s timed out, reopened for retry %d/%d", taskID, ts.RetryCount, maxRetries))
+			} else {
+				ts.Phase = karov1alpha1.TaskPhaseFailed
+				ts.FailureNotes = fmt.Sprintf("Task timed out after %d minutes (retries exhausted)", timeoutMinutes)
+				nowMeta := metav1.NewTime(now)
+				ts.CompletedAt = &nowMeta
+				tg.Status.TaskStatuses[taskID] = ts
+				r.Recorder.Event(tg, "Warning", "TaskTimeout",
+					fmt.Sprintf("Task %s timed out after %d minutes (retries exhausted)", taskID, timeoutMinutes))
+			}
 		}
 	}
 }

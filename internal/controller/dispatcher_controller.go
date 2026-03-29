@@ -65,6 +65,16 @@ func (r *DispatcherReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	var pendingTasks int32
 	var totalDispatched int64
 
+	// Count currently in-flight tasks across all TaskGraphs for maxConcurrent enforcement.
+	var inFlight int32
+	for i := range taskGraphs.Items {
+		for _, ts := range taskGraphs.Items[i].Status.TaskStatuses {
+			if ts.Phase == karov1alpha1.TaskPhaseDispatched || ts.Phase == karov1alpha1.TaskPhaseInProgress {
+				inFlight++
+			}
+		}
+	}
+
 	for i := range taskGraphs.Items {
 		tg := &taskGraphs.Items[i]
 		if tg.Status.TaskStatuses == nil {
@@ -86,24 +96,38 @@ func (r *DispatcherReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 			}
 
 			pendingTasks++
+
+			// Enforce maxConcurrent limit from the TaskGraph's dispatch policy.
+			if tg.Spec.DispatchPolicy.MaxConcurrent > 0 && inFlight >= tg.Spec.DispatchPolicy.MaxConcurrent {
+				continue
+			}
+
 			task, ok := taskByID[taskID]
 			if !ok {
 				continue
 			}
 
 			// Route by capability mode: match task.Type to capabilityRoutes.
-			agentSpecName := r.routeTask(&dispatcher, task)
+			agentSpecName, skillPrompt := r.routeTask(&dispatcher, task)
 			if agentSpecName == "" {
 				logger.Info("no route found for task", "taskID", taskID, "taskType", task.Type)
 				continue
 			}
 
-			// Look up the AgentSpec to check scaling limits.
+			// Look up the AgentSpec to check scaling limits and resolve skill prompt.
 			var agentSpec karov1alpha1.AgentSpec
 			agentSpecKey := types.NamespacedName{Name: agentSpecName, Namespace: dispatcher.Namespace}
 			if err := r.Get(ctx, agentSpecKey, &agentSpec); err != nil {
 				logger.Error(err, "failed to get AgentSpec for routing", "agentSpec", agentSpecName)
 				continue
+			}
+
+			// Resolve SkillPrompt from AgentSpec capabilities for the matched task type.
+			for _, cap := range agentSpec.Spec.Capabilities {
+				if cap.Name == string(task.Type) && cap.SkillPrompt != nil && cap.SkillPrompt.Inline != "" {
+					skillPrompt = cap.SkillPrompt.Inline
+					break
+				}
 			}
 
 			// Find or create an AgentMailbox for this agent.
@@ -118,8 +142,8 @@ func (r *DispatcherReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 			// Check if we need to create an AgentInstance (no idle instance and under maxInstances).
 			r.ensureAgentInstance(ctx, &dispatcher, &agentSpec, tg, task)
 
-			// Deliver task to mailbox.
-			if err := r.deliverTask(ctx, &mailbox, tg, task); err != nil {
+			// Deliver task to mailbox with skill prompt from routing.
+			if err := r.deliverTask(ctx, &mailbox, tg, task, skillPrompt); err != nil {
 				logger.Error(err, "failed to deliver task to mailbox", "taskID", taskID)
 				continue
 			}
@@ -131,6 +155,7 @@ func (r *DispatcherReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 			ts.AssignedAt = &now
 			tg.Status.TaskStatuses[taskID] = ts
 			totalDispatched++
+			inFlight++
 			pendingTasks--
 
 			r.Recorder.Event(&dispatcher, "Normal", "TaskDispatched",
@@ -169,32 +194,31 @@ func (r *DispatcherReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 }
 
 // routeTask finds the AgentSpec name for a task based on capability routing.
-func (r *DispatcherReconciler) routeTask(dispatcher *karov1alpha1.Dispatcher, task karov1alpha1.Task) string {
+// It also resolves the SkillPrompt from the matched AgentSpec capability.
+func (r *DispatcherReconciler) routeTask(dispatcher *karov1alpha1.Dispatcher, task karov1alpha1.Task) (string, string) {
 	switch dispatcher.Spec.Mode {
 	case karov1alpha1.DispatchModeCapability:
 		for _, route := range dispatcher.Spec.CapabilityRoutes {
 			if route.Capability == string(task.Type) {
-				return route.AgentSpecRef.Name
+				return route.AgentSpecRef.Name, ""
 			}
 		}
-		// Fall back to fallback agent.
 		if dispatcher.Spec.FallbackAgentSpecRef != nil {
-			return dispatcher.Spec.FallbackAgentSpecRef.Name
+			return dispatcher.Spec.FallbackAgentSpecRef.Name, ""
 		}
 	case karov1alpha1.DispatchModeRoundRobin:
-		// Simple: use first capability route if available.
 		if len(dispatcher.Spec.CapabilityRoutes) > 0 {
-			return dispatcher.Spec.CapabilityRoutes[0].AgentSpecRef.Name
+			return dispatcher.Spec.CapabilityRoutes[0].AgentSpecRef.Name, ""
 		}
 		if dispatcher.Spec.FallbackAgentSpecRef != nil {
-			return dispatcher.Spec.FallbackAgentSpecRef.Name
+			return dispatcher.Spec.FallbackAgentSpecRef.Name, ""
 		}
 	default:
 		if dispatcher.Spec.FallbackAgentSpecRef != nil {
-			return dispatcher.Spec.FallbackAgentSpecRef.Name
+			return dispatcher.Spec.FallbackAgentSpecRef.Name, ""
 		}
 	}
-	return ""
+	return "", ""
 }
 
 // ensureAgentInstance creates an AgentInstance if no idle instance exists
@@ -265,7 +289,7 @@ func (r *DispatcherReconciler) ensureAgentInstance(ctx context.Context, dispatch
 }
 
 // deliverTask appends a TaskAssigned message to the AgentMailbox's pending messages.
-func (r *DispatcherReconciler) deliverTask(ctx context.Context, mailbox *karov1alpha1.AgentMailbox, tg *karov1alpha1.TaskGraph, task karov1alpha1.Task) error {
+func (r *DispatcherReconciler) deliverTask(ctx context.Context, mailbox *karov1alpha1.AgentMailbox, tg *karov1alpha1.TaskGraph, task karov1alpha1.Task, skillPrompt string) error {
 	// Check max pending messages (default 100).
 	maxPending := mailbox.Spec.MaxPendingMessages
 	if maxPending == 0 {
@@ -284,6 +308,7 @@ func (r *DispatcherReconciler) deliverTask(ctx context.Context, mailbox *karov1a
 		AcceptanceCriteria: task.AcceptanceCriteria,
 		EvalGateEnabled:    task.EvalGate != nil,
 		Priority:           task.Priority,
+		SkillPrompt:        skillPrompt,
 	}
 
 	payloadBytes, err := json.Marshal(payload)

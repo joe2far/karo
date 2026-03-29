@@ -19,6 +19,8 @@ import (
 // +kubebuilder:rbac:groups=karo.dev,resources=agentchannels,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=karo.dev,resources=agentchannels/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=karo.dev,resources=agentchannels/finalizers,verbs=update
+// +kubebuilder:rbac:groups=karo.dev,resources=taskgraphs,verbs=get;list;watch
+// +kubebuilder:rbac:groups=karo.dev,resources=taskgraphs/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
@@ -71,6 +73,9 @@ func (r *AgentChannelReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		Reason:             "Connected",
 		Message:            fmt.Sprintf("Platform %s credentials validated", channel.Spec.Platform.Type),
 	})
+
+	// Scan for approval tasks (type: approval) that need human interaction.
+	r.handleApprovalTasks(ctx, &channel)
 
 	setCondition(&channel.Status.Conditions, metav1.Condition{
 		Type:               "Ready",
@@ -156,6 +161,57 @@ func (r *AgentChannelReconciler) checkSecretExists(ctx context.Context, namespac
 		return fmt.Errorf("secret %s/%s: %w", namespace, name, err)
 	}
 	return nil
+}
+
+// handleApprovalTasks scans TaskGraphs in the channel's namespace for tasks
+// with type "approval" that are Open and transitions them to AwaitingApproval.
+// In a full implementation, this would also post the approval request to the
+// configured platform (Slack, Telegram, etc.).
+func (r *AgentChannelReconciler) handleApprovalTasks(ctx context.Context, channel *karov1alpha1.AgentChannel) {
+	logger := log.FromContext(ctx)
+
+	var taskGraphs karov1alpha1.TaskGraphList
+	if err := r.List(ctx, &taskGraphs, client.InNamespace(channel.Namespace)); err != nil {
+		logger.Error(err, "failed to list TaskGraphs for approval handling")
+		return
+	}
+
+	var pendingApprovals int32
+	for i := range taskGraphs.Items {
+		tg := &taskGraphs.Items[i]
+		updated := false
+		for _, task := range tg.Spec.Tasks {
+			if task.Type != karov1alpha1.TaskTypeApproval {
+				continue
+			}
+			ts, exists := tg.Status.TaskStatuses[task.ID]
+			if !exists {
+				continue
+			}
+			if ts.Phase == karov1alpha1.TaskPhaseOpen {
+				// Transition to AwaitingApproval — the channel owns this task now.
+				ts.Phase = karov1alpha1.TaskPhaseAwaitingApproval
+				now := metav1.Now()
+				ts.AssignedAt = &now
+				ts.AssignedTo = fmt.Sprintf("channel:%s", channel.Name)
+				tg.Status.TaskStatuses[task.ID] = ts
+				updated = true
+				pendingApprovals++
+				r.Recorder.Eventf(channel, "Normal", "ApprovalRequested",
+					"Approval task %s from TaskGraph %s posted to %s channel",
+					task.ID, tg.Name, channel.Spec.Platform.Type)
+			} else if ts.Phase == karov1alpha1.TaskPhaseAwaitingApproval {
+				pendingApprovals++
+			}
+		}
+		if updated {
+			if err := r.Status().Update(ctx, tg); err != nil {
+				logger.Error(err, "failed to update TaskGraph for approval", "taskGraph", tg.Name)
+			}
+		}
+	}
+
+	channel.Status.PendingApprovals = pendingApprovals
 }
 
 func (r *AgentChannelReconciler) SetupWithManager(mgr ctrl.Manager) error {

@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -15,6 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	karov1alpha1 "github.com/karo-dev/karo/api/v1alpha1"
+	gitinjector "github.com/karo-dev/karo/internal/git"
 )
 
 // +kubebuilder:rbac:groups=karo.dev,resources=agentinstances,verbs=get;list;watch;create;update;patch;delete
@@ -136,6 +138,58 @@ func (r *AgentInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	} else {
 		// Update status based on pod phase
 		r.updatePhaseFromPod(&instance, &existingPod)
+
+		// Handle hibernation: if Idle and hibernation policy is set, check idle duration.
+		if instance.Status.Phase == karov1alpha1.AgentInstancePhaseIdle &&
+			instance.Spec.Hibernation.IdleAfter.Duration > 0 &&
+			instance.Status.LastActiveAt != nil {
+			idleDuration := time.Since(instance.Status.LastActiveAt.Time)
+			if idleDuration > instance.Spec.Hibernation.IdleAfter.Duration {
+				// Delete the pod and set phase to Hibernated.
+				if err := r.Delete(ctx, &existingPod); err != nil && !errors.IsNotFound(err) {
+					logger.Error(err, "failed to delete pod for hibernation")
+				} else {
+					instance.Status.Phase = karov1alpha1.AgentInstancePhaseHibernated
+					instance.Status.PodRef = nil
+					r.Recorder.Eventf(&instance, corev1.EventTypeNormal, "Hibernated",
+						"Agent hibernated after %s idle", instance.Spec.Hibernation.IdleAfter.Duration)
+				}
+			}
+		}
+	}
+
+	// Check context token exhaustion if running.
+	if instance.Status.Phase == karov1alpha1.AgentInstancePhaseRunning &&
+		agentSpec.Spec.MaxContextTokens > 0 &&
+		instance.Status.ContextTokensUsed >= agentSpec.Spec.MaxContextTokens {
+		switch agentSpec.Spec.OnContextExhaustion {
+		case "terminate":
+			instance.Status.Phase = karov1alpha1.AgentInstancePhaseTerminated
+			r.Recorder.Event(&instance, corev1.EventTypeWarning, "ContextExhausted",
+				"Context tokens exhausted, terminating agent")
+		case "checkpoint":
+			// Checkpoint: delete pod and hibernate.
+			if podExists {
+				if err := r.Delete(ctx, &existingPod); err != nil && !errors.IsNotFound(err) {
+					logger.Error(err, "failed to delete pod for checkpoint")
+				}
+			}
+			instance.Status.Phase = karov1alpha1.AgentInstancePhaseHibernated
+			instance.Status.PodRef = nil
+			r.Recorder.Event(&instance, corev1.EventTypeWarning, "ContextExhausted",
+				"Context tokens exhausted, checkpointing agent")
+		default: // "restart"
+			if podExists {
+				if err := r.Delete(ctx, &existingPod); err != nil && !errors.IsNotFound(err) {
+					logger.Error(err, "failed to delete pod for restart")
+				}
+			}
+			instance.Status.Phase = karov1alpha1.AgentInstancePhasePending
+			instance.Status.PodRef = nil
+			instance.Status.ContextTokensUsed = 0
+			r.Recorder.Event(&instance, corev1.EventTypeWarning, "ContextExhausted",
+				"Context tokens exhausted, restarting agent")
+		}
 	}
 
 	// Set Ready condition
@@ -263,13 +317,35 @@ func (r *AgentInstanceReconciler) buildPod(instance *karov1alpha1.AgentInstance,
 	}
 
 	// MCP sidecar container
+	mailboxName := fmt.Sprintf("%s-mailbox", agentSpec.Name)
 	sidecar := corev1.Container{
 		Name:  "agent-runtime-mcp",
 		Image: "ghcr.io/karo-dev/agent-runtime-mcp:latest",
 		Env: []corev1.EnvVar{
 			{Name: "KARO_AGENT_INSTANCE", Value: instance.Name},
+			{Name: "KARO_AGENT_SPEC", Value: agentSpec.Name},
 			{Name: "KARO_NAMESPACE", Value: instance.Namespace},
+			{Name: "KARO_MAILBOX", Value: mailboxName},
+			{Name: "KARO_MCP_TRANSPORT", Value: "stdio"},
 		},
+	}
+
+	// Build init containers for git credentials if configured.
+	var initContainers []corev1.Container
+	var volumes []corev1.Volume
+	if agentSpec.Spec.WorkspaceCredentials != nil && len(agentSpec.Spec.WorkspaceCredentials.Git) > 0 {
+		gitInitContainer := gitinjector.BuildGitInitContainer(agentSpec, nil)
+		initContainers = append(initContainers, gitInitContainer)
+		volumes = append(volumes, corev1.Volume{
+			Name: "home",
+			VolumeSource: corev1.VolumeSource{
+				EmptyDir: &corev1.EmptyDirVolumeSource{},
+			},
+		})
+		// Mount home volume in main container too so git config is available.
+		mainContainer.VolumeMounts = append(mainContainer.VolumeMounts, corev1.VolumeMount{
+			Name: "home", MountPath: "/root",
+		})
 	}
 
 	pod := &corev1.Pod{
@@ -279,8 +355,10 @@ func (r *AgentInstanceReconciler) buildPod(instance *karov1alpha1.AgentInstance,
 			Labels:    labels,
 		},
 		Spec: corev1.PodSpec{
-			Containers:    []corev1.Container{mainContainer, sidecar},
-			RestartPolicy: corev1.RestartPolicyNever,
+			InitContainers: initContainers,
+			Containers:     []corev1.Container{mainContainer, sidecar},
+			Volumes:        volumes,
+			RestartPolicy:  corev1.RestartPolicyNever,
 		},
 	}
 
