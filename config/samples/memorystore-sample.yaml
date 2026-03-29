@@ -1,0 +1,34 @@
+apiVersion: karo.dev/v1alpha1
+kind: MemoryStore
+metadata:
+  name: team-shared-memory
+  namespace: team-alpha
+spec:
+  backend:
+    type: mem0                     # mem0 | redis | pgvector | custom
+    mem0:
+      apiKeySecret:
+        name: mem0-credentials
+        key: MEM0_API_KEY
+      organizationId: "org-abc123"
+      projectId: "proj-xyz456"
+
+  # Scope determines which agents can access this store
+  scope: team                      # agent-local | team | org
+
+  # Which agents are bound to this store
+  boundAgents:
+    - name: coder-agent
+    - name: planner-agent
+    - name: reviewer-agent
+
+  # Retention
+  retentionDays: 90
+  maxMemories: 10000
+
+  # Memory categories to track
+  categories:
+    - decisions
+    - code-patterns
+    - architecture
+    - errors

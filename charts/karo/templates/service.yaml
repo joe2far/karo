@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "karo.fullname" . }}-metrics
+  namespace: {{ include "karo.namespace" . }}
+  labels:
+    {{- include "karo.labels" . | nindent 4 }}
+    app.kubernetes.io/component: metrics
+spec:
+  selector:
+    {{- include "karo.selectorLabels" . | nindent 4 }}
+  ports:
+    {{- if .Values.metrics.enabled }}
+    - name: metrics
+      port: {{ .Values.observability.metrics.port | default 8080 }}
+      targetPort: metrics
+      protocol: TCP
+    {{- end }}
+---
+{{- if .Values.webhook.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "karo.fullname" . }}-webhook
+  namespace: {{ include "karo.namespace" . }}
+  labels:
+    {{- include "karo.labels" . | nindent 4 }}
+    app.kubernetes.io/component: webhook
+spec:
+  selector:
+    {{- include "karo.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: https
+      port: 443
+      targetPort: webhook
+      protocol: TCP
+{{- end }}

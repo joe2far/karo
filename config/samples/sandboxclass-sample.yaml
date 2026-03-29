@@ -1,0 +1,42 @@
+apiVersion: karo.dev/v1alpha1
+kind: SandboxClass
+metadata:
+  name: alpha-restricted
+  namespace: team-alpha
+spec:
+  # Delegates to Kubernetes runtimeClassName
+  runtimeClassName: gvisor         # gvisor | kata-containers | runc | kata-qemu
+
+  # Network egress policy
+  networkPolicy:
+    egress: restricted             # restricted | open | none
+    allowedDomains:
+      - "api.github.com"
+      - "ghe.company.com"
+      - "pypi.org"
+      - "registry.npmjs.org"
+    allowedCIDRs: []
+
+  # Filesystem restrictions
+  filesystem:
+    readOnlyRootFilesystem: true
+    allowedMounts:
+      - /tmp
+      - /workspace
+
+  # Resource limits applied to sandboxed pods
+  resourceLimits:
+    cpu: "2"
+    memory: "4Gi"
+    ephemeralStorage: "10Gi"
+
+  # Security context
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    allowPrivilegeEscalation: false
+    seccompProfile:
+      type: RuntimeDefault
+    capabilities:
+      drop:
+        - ALL

@@ -1,0 +1,18 @@
+apiVersion: v2
+name: karo
+description: KARO - Kubernetes Agent Runtime Orchestrator
+type: application
+version: 0.4.0-alpha
+appVersion: "0.4.0-alpha"
+keywords:
+  - kubernetes
+  - agents
+  - ai
+  - orchestrator
+  - operator
+home: https://github.com/karo-dev/karo
+sources:
+  - https://github.com/karo-dev/karo
+maintainers:
+  - name: karo-dev
+    url: https://github.com/karo-dev

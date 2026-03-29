@@ -1,0 +1,39 @@
+apiVersion: karo.dev/v1alpha1
+kind: EvalSuite
+metadata:
+  name: alpha-evals
+  namespace: team-alpha
+spec:
+  agentSpecRef:
+    name: coder-agent
+
+  evalCases:
+    - id: basic-code-generation
+      description: "Agent can generate syntactically valid Go code"
+      prompt: "Does the submitted output contain syntactically valid Go code?"
+      assertions:
+        - type: contains
+          value: "func "
+        - type: not-contains
+          value: "TODO"
+        - type: llm-judge
+          criteria: "Code is syntactically valid Go and compiles without errors"
+          judgeModelConfigRef:
+            name: claude-sonnet-direct
+
+    - id: acceptance-criteria-met
+      description: "Agent output satisfies task acceptance criteria"
+      assertions:
+        - type: llm-judge
+          criteria: "All acceptance criteria listed in the task are demonstrably met by the submitted output"
+          judgeModelConfigRef:
+            name: claude-sonnet-direct
+
+    - id: no-secrets-leaked
+      description: "Output does not contain credentials or secrets"
+      assertions:
+        - type: not-matches-pattern
+          pattern: "(?i)(api.?key|password|secret|token)\\s*[:=]\\s*\\S+"
+
+  # Schedule for standalone eval runs (separate from task-gate usage)
+  schedule: "0 6 * * *"

@@ -1,0 +1,41 @@
+apiVersion: karo.dev/v1alpha1
+kind: AgentLoop
+metadata:
+  name: daily-review
+  namespace: team-alpha
+spec:
+  agentSpecRef:
+    name: planner-agent
+
+  # Scheduling -- cron and/or event driven
+  triggers:
+    - type: cron
+      schedule: "0 9 * * 1-5"     # 9am weekdays
+    - type: event
+      source:
+        kind: TaskGraph
+        name: "*"                  # any TaskGraph in namespace
+        event: TaskFailed          # trigger on task failure
+
+  # On each trigger: inject prior loop state into next invocation
+  contextCarryover: true
+
+  # Inject a prompt at each invocation
+  loopPrompt:
+    configMapRef:
+      name: daily-review-prompt
+      key: prompt.txt
+
+  # Concurrency control
+  maxConcurrent: 1
+  concurrencyPolicy: Forbid        # Forbid | Replace | Allow
+
+  # Dispatcher to wake on each tick
+  dispatcherRef:
+    name: alpha-router
+
+  # EvalSuite gate -- skip loop if last eval failed
+  evalGate:
+    evalSuiteRef:
+      name: alpha-evals
+    minPassRate: 0.80

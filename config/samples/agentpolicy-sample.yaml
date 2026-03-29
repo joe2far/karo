@@ -1,0 +1,65 @@
+apiVersion: karo.dev/v1alpha1
+kind: AgentPolicy
+metadata:
+  name: alpha-policy
+  namespace: team-alpha
+spec:
+  targetSelector:
+    matchLabels:
+      team: alpha
+
+  # Model constraints
+  models:
+    allowedProviders:
+      - anthropic
+      - openai
+    deniedModels:
+      - "gpt-3.5-turbo"
+    requireMinContextWindow: 100000
+
+  # Tool call governance
+  toolCalls:
+    maxPerMinute: 60
+    maxPerLoop: 500
+    requireSandboxForExecute: true
+
+  # Loop / heartbeat governance
+  loop:
+    maxIterationsPerRun: 100
+    maxRunDurationMinutes: 60
+    requireHumanApprovalAfterIterations: 50
+
+  # TaskGraph mutation permissions
+  taskGraph:
+    allowMutation: true
+    mutationScope:
+      - addTask
+      - closeTask
+      - addDependency
+    denyMutation:
+      - deleteTask
+      - modifyOtherAgentTask
+    requireAuditTrail: true
+
+  # Audit logging
+  audit:
+    enabled: true
+    logLevel: Full                 # Full | Summary | None
+    logDestination:
+      type: stdout                 # stdout | loki | s3
+    retentionDays: 365
+
+  # Data classification
+  dataClassification:
+    allowedLevels:
+      - internal
+      - confidential
+    denyPatterns:
+      - ".*api[_-]?key.*"
+      - ".*password.*"
+      - ".*secret.*"
+
+  # Escalation
+  escalation:
+    onPolicyViolation: Block       # Block | Warn | Audit
+    notifyWebhook: "http://policy-alerts.internal/karo"

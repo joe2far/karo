@@ -1,0 +1,62 @@
+replicaCount: 2
+
+image:
+  repository: ghcr.io/karo-dev/karo-operator
+  tag: "0.4.0-alpha"
+  pullPolicy: IfNotPresent
+
+installCRDs: true
+
+webhook:
+  enabled: true
+  certManagerEnabled: true
+
+rbac:
+  create: true
+  serviceAccount:
+    create: true
+    name: karo-operator
+
+leaderElection:
+  enabled: true
+  namespace: karo-system
+
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: false
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+observability:
+  enabled: true
+
+  # Metrics endpoint on the operator
+  metrics:
+    port: 8080
+    path: /metrics
+
+  # VictoriaMetrics scrape configs (requires victoria-metrics-operator or prometheus-operator)
+  vmServiceScrape:
+    enabled: true
+    interval: 15s
+
+  vmPodScrape:
+    enabled: true
+    interval: 30s
+
+  # Alerting rules
+  vmRule:
+    enabled: true
+
+  # Grafana dashboard ConfigMap
+  grafanaDashboard:
+    enabled: true
+    labels:
+      grafana_dashboard: "true"

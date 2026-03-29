@@ -1,0 +1,78 @@
+apiVersion: karo.dev/v1alpha1
+kind: AgentChannel
+metadata:
+  name: alpha-slack-channel
+  namespace: team-alpha
+spec:
+  # Platform binding -- one platform per AgentChannel resource
+  platform:
+    type: slack
+    slack:
+      appCredentialSecret:
+        name: karo-slack-app
+        key: SLACK_BOT_TOKEN
+      signingSecret:
+        name: karo-slack-app
+        key: SLACK_SIGNING_SECRET
+      appToken:
+        name: karo-slack-app
+        key: SLACK_APP_TOKEN
+      channelId: "C04ABCDEF12"
+      socketMode: true
+      allowedUserIds:
+        - "U01ALICE"
+        - "U02BOB"
+      threadReplies: true
+
+  # Inbound: what happens when a human sends a message
+  inbound:
+    defaultTeamRef:
+      name: alpha-team
+    mode: task-creation              # task-creation | human-override | auto
+    taskGraphTemplate:
+      ownerAgentRef:
+        name: planner-agent
+      dispatcherRef:
+        name: alpha-router
+      initialTaskType: design
+
+  # Outbound: when KARO posts to the channel
+  outbound:
+    notifyOn:
+      - taskGraphCreated
+      - taskGraphCompleted
+      - taskFailed
+      - approvalRequired
+      - evalGateFailed
+    format: summary                  # summary | detailed | minimal
+    summaryModelConfigRef:
+      name: claude-sonnet-direct
+
+  # Approval flow
+  approvals:
+    enabled: true
+    style: interactive               # interactive | reply
+    timeoutMinutes: 1440             # 24 hours
+    onTimeout: escalate              # auto-approve | escalate | block
+
+  # Multi-team handoff
+  teamHandoff:
+    - fromTeamRef:
+        name: design-team
+      toTeamRef:
+        name: dev-team
+      trigger: taskGraphCompleted
+      requireApproval: true
+      handoffTaskGraphTemplate:
+        ownerAgentRef:
+          name: dev-planner-agent
+        dispatcherRef:
+          name: dev-router
+        initialTaskType: impl
+        injectUpstreamContext: true
+    - fromTeamRef:
+        name: dev-team
+      toTeamRef:
+        name: qa-team
+      trigger: taskGraphCompleted
+      requireApproval: false

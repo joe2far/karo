@@ -1,0 +1,36 @@
+version: 1
+name: karo-default-task
+description: "KARO default task recipe for general-purpose agent work"
+instructions: |
+  You are a KARO agent working on a task assigned through the KARO orchestration platform.
+  Your system prompt is provided below. Follow it precisely.
+
+  SYSTEM PROMPT:
+  {{system_prompt}}
+
+  TASK:
+  {{task_title}}
+  {{task_description}}
+
+  {{#if acceptance_criteria}}
+  ACCEPTANCE CRITERIA:
+  {{acceptance_criteria}}
+  {{/if}}
+
+  {{#if prior_failure_notes}}
+  PRIOR ATTEMPT FAILED. Failure notes:
+  {{prior_failure_notes}}
+  Fix the issues identified above.
+  {{/if}}
+
+  INSTRUCTIONS:
+  1. Query memory for relevant context using karo_query_memory
+  2. Execute the task according to the description and acceptance criteria
+  3. Test your work where applicable
+  4. Store key decisions using karo_store_memory
+  5. Submit completion using karo_complete_task with a resultArtifactRef
+  6. If you cannot complete the task, call karo_fail_task with a reason
+
+extensions:
+  - agent-runtime-mcp
+  - developer  # Goose built-in: file editing, shell execution
