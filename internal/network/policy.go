@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -106,7 +107,9 @@ func (pm *PolicyManager) ensureCiliumPolicy(ctx context.Context, sandbox *karov1
 	// Build toFQDNs egress rules for allowed domains.
 	var egressRules []interface{}
 
-	// DNS egress — always allowed so FQDN resolution works.
+	// DNS egress with DNS proxy rule — mandatory for toFQDNs to work.
+	// Without rules.dns, Cilium cannot learn which IPs map to the allowed
+	// FQDNs and all FQDN-based egress will be silently blocked.
 	dnsRule := map[string]interface{}{
 		"toEndpoints": []interface{}{
 			map[string]interface{}{
@@ -119,8 +122,12 @@ func (pm *PolicyManager) ensureCiliumPolicy(ctx context.Context, sandbox *karov1
 		"toPorts": []interface{}{
 			map[string]interface{}{
 				"ports": []interface{}{
-					map[string]interface{}{"port": "53", "protocol": "UDP"},
-					map[string]interface{}{"port": "53", "protocol": "TCP"},
+					map[string]interface{}{"port": "53", "protocol": "ANY"},
+				},
+				"rules": map[string]interface{}{
+					"dns": []interface{}{
+						map[string]interface{}{"matchPattern": "*"},
+					},
 				},
 			},
 		},
@@ -128,12 +135,19 @@ func (pm *PolicyManager) ensureCiliumPolicy(ctx context.Context, sandbox *karov1
 	egressRules = append(egressRules, dnsRule)
 
 	// FQDN-based egress rules.
+	// matchName = exact domain, matchPattern = wildcard (*.example.com).
 	if len(sandbox.Spec.NetworkPolicy.AllowedDomains) > 0 {
 		var fqdnSelectors []interface{}
 		for _, domain := range sandbox.Spec.NetworkPolicy.AllowedDomains {
-			fqdnSelectors = append(fqdnSelectors, map[string]interface{}{
-				"matchName": domain,
-			})
+			if strings.Contains(domain, "*") {
+				fqdnSelectors = append(fqdnSelectors, map[string]interface{}{
+					"matchPattern": domain,
+				})
+			} else {
+				fqdnSelectors = append(fqdnSelectors, map[string]interface{}{
+					"matchName": domain,
+				})
+			}
 		}
 		fqdnRule := map[string]interface{}{
 			"toFQDNs": fqdnSelectors,
