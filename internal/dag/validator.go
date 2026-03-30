@@ -3,7 +3,7 @@ package dag
 import (
 	"fmt"
 
-	karov1alpha1 "github.com/karo-dev/karo/api/v1alpha1"
+	karov1alpha1 "github.com/joe2far/karo/api/v1alpha1"
 )
 
 // ValidateNoCycles checks that the task DAG has no cycles using Kahn's algorithm.

@@ -32,8 +32,8 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
-	karov1alpha1 "github.com/karo-dev/karo/api/v1alpha1"
-	"github.com/karo-dev/karo/internal/controller"
+	karov1alpha1 "github.com/joe2far/karo/api/v1alpha1"
+	"github.com/joe2far/karo/internal/controller"
 	// +kubebuilder:scaffold:imports
 )
 

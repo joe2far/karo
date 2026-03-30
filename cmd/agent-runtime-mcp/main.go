@@ -7,7 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	karoruntime "github.com/karo-dev/karo/internal/runtime"
+	karoruntime "github.com/joe2far/karo/internal/runtime"
 )
 
 func main() {

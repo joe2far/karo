@@ -3,7 +3,7 @@ package runtime
 import (
 	"os"
 
-	karov1alpha1 "github.com/karo-dev/karo/api/v1alpha1"
+	karov1alpha1 "github.com/joe2far/karo/api/v1alpha1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"

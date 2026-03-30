@@ -10,9 +10,9 @@ keywords:
   - ai
   - orchestrator
   - operator
-home: https://github.com/karo-dev/karo
+home: https://github.com/joe2far/karo
 sources:
-  - https://github.com/karo-dev/karo
+  - https://github.com/joe2far/karo
 maintainers:
   - name: karo-dev
     url: https://github.com/karo-dev

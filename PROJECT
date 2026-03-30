@@ -9,7 +9,7 @@ plugins:
   manifests.sdk.operatorframework.io/v2: {}
   scorecard.sdk.operatorframework.io/v2: {}
 projectName: karo
-repo: github.com/karo-dev/karo
+repo: github.com/joe2far/karo
 resources:
 - api:
     crdVersion: v1
@@ -18,7 +18,7 @@ resources:
   domain: karo.dev
   group: karo.dev
   kind: SandboxClass
-  path: github.com/karo-dev/karo/api/v1alpha1
+  path: github.com/joe2far/karo/api/v1alpha1
   version: v1alpha1
 - api:
     crdVersion: v1
@@ -27,7 +27,7 @@ resources:
   domain: karo.dev
   group: karo.dev
   kind: ModelConfig
-  path: github.com/karo-dev/karo/api/v1alpha1
+  path: github.com/joe2far/karo/api/v1alpha1
   version: v1alpha1
 - api:
     crdVersion: v1
@@ -36,7 +36,7 @@ resources:
   domain: karo.dev
   group: karo.dev
   kind: MemoryStore
-  path: github.com/karo-dev/karo/api/v1alpha1
+  path: github.com/joe2far/karo/api/v1alpha1
   version: v1alpha1
 - api:
     crdVersion: v1
@@ -45,7 +45,7 @@ resources:
   domain: karo.dev
   group: karo.dev
   kind: ToolSet
-  path: github.com/karo-dev/karo/api/v1alpha1
+  path: github.com/joe2far/karo/api/v1alpha1
   version: v1alpha1
 - api:
     crdVersion: v1
@@ -54,7 +54,7 @@ resources:
   domain: karo.dev
   group: karo.dev
   kind: AgentPolicy
-  path: github.com/karo-dev/karo/api/v1alpha1
+  path: github.com/joe2far/karo/api/v1alpha1
   version: v1alpha1
 - api:
     crdVersion: v1
@@ -63,7 +63,7 @@ resources:
   domain: karo.dev
   group: karo.dev
   kind: EvalSuite
-  path: github.com/karo-dev/karo/api/v1alpha1
+  path: github.com/joe2far/karo/api/v1alpha1
   version: v1alpha1
 - api:
     crdVersion: v1
@@ -72,7 +72,7 @@ resources:
   domain: karo.dev
   group: karo.dev
   kind: AgentSpec
-  path: github.com/karo-dev/karo/api/v1alpha1
+  path: github.com/joe2far/karo/api/v1alpha1
   version: v1alpha1
 - api:
     crdVersion: v1
@@ -81,7 +81,7 @@ resources:
   domain: karo.dev
   group: karo.dev
   kind: AgentMailbox
-  path: github.com/karo-dev/karo/api/v1alpha1
+  path: github.com/joe2far/karo/api/v1alpha1
   version: v1alpha1
 - api:
     crdVersion: v1
@@ -90,7 +90,7 @@ resources:
   domain: karo.dev
   group: karo.dev
   kind: AgentInstance
-  path: github.com/karo-dev/karo/api/v1alpha1
+  path: github.com/joe2far/karo/api/v1alpha1
   version: v1alpha1
 - api:
     crdVersion: v1
@@ -99,7 +99,7 @@ resources:
   domain: karo.dev
   group: karo.dev
   kind: TaskGraph
-  path: github.com/karo-dev/karo/api/v1alpha1
+  path: github.com/joe2far/karo/api/v1alpha1
   version: v1alpha1
 - api:
     crdVersion: v1
@@ -108,7 +108,7 @@ resources:
   domain: karo.dev
   group: karo.dev
   kind: Dispatcher
-  path: github.com/karo-dev/karo/api/v1alpha1
+  path: github.com/joe2far/karo/api/v1alpha1
   version: v1alpha1
 - api:
     crdVersion: v1
@@ -117,7 +117,7 @@ resources:
   domain: karo.dev
   group: karo.dev
   kind: AgentTeam
-  path: github.com/karo-dev/karo/api/v1alpha1
+  path: github.com/joe2far/karo/api/v1alpha1
   version: v1alpha1
 - api:
     crdVersion: v1
@@ -126,7 +126,7 @@ resources:
   domain: karo.dev
   group: karo.dev
   kind: AgentLoop
-  path: github.com/karo-dev/karo/api/v1alpha1
+  path: github.com/joe2far/karo/api/v1alpha1
   version: v1alpha1
 - api:
     crdVersion: v1
@@ -135,6 +135,6 @@ resources:
   domain: karo.dev
   group: karo.dev
   kind: AgentChannel
-  path: github.com/karo-dev/karo/api/v1alpha1
+  path: github.com/joe2far/karo/api/v1alpha1
   version: v1alpha1
 version: "3"

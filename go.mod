@@ -1,4 +1,4 @@
-module github.com/karo-dev/karo
+module github.com/joe2far/karo
 
 go 1.22.0
 

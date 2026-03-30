@@ -24,7 +24,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/karo-dev/karo/test/utils"
+	"github.com/joe2far/karo/test/utils"
 )
 
 const namespace = "karo-system"

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	karov1alpha1 "github.com/karo-dev/karo/api/v1alpha1"
+	karov1alpha1 "github.com/joe2far/karo/api/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"

@@ -12,8 +12,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	karov1alpha1 "github.com/karo-dev/karo/api/v1alpha1"
-	"github.com/karo-dev/karo/internal/dag"
+	karov1alpha1 "github.com/joe2far/karo/api/v1alpha1"
+	"github.com/joe2far/karo/internal/dag"
 )
 
 // +kubebuilder:rbac:groups=karo.dev,resources=taskgraphs,verbs=get;list;watch;create;update;patch;delete

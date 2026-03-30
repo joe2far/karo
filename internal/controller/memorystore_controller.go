@@ -11,7 +11,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	karov1alpha1 "github.com/karo-dev/karo/api/v1alpha1"
+	karov1alpha1 "github.com/joe2far/karo/api/v1alpha1"
 )
 
 const memoryStoreFinalizer = "karo.dev/memorystore-finalizer"
