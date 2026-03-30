@@ -4,7 +4,7 @@
 
 You are implementing **KARO (Kubernetes Agent Runtime Orchestrator)** — a Kubernetes-native operator that provides first-class CRD primitives for deploying, orchestrating, and governing AI agents at scale.
 
-The complete specification is in `karo-spec-v0.4.0-alpha.md` in this repository. **Read the entire spec before writing any code.** The spec is the single source of truth — it contains all CRD definitions, Go type definitions, controller reconciliation flows, implementation order, and code examples. Do not deviate from it.
+The complete specification is in `docs/karo-spec-v0.4.0-alpha.md` in this repository. **Read the entire spec before writing any code.** The spec is the single source of truth — it contains all CRD definitions, Go type definitions, controller reconciliation flows, implementation order, and code examples. Do not deviate from it.
 
 ## Project Setup
 

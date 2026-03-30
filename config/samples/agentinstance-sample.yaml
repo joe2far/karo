@@ -1,0 +1,18 @@
+apiVersion: karo.dev/v1alpha1
+kind: AgentInstance
+metadata:
+  name: coder-agent-abc123
+  namespace: team-alpha
+spec:
+  agentSpecRef:
+    name: coder-agent
+
+  # Current task this instance is working on
+  currentTaskRef:
+    taskGraph: feature-auth
+    taskId: impl-endpoints
+
+  # Hibernation policy
+  hibernation:
+    idleAfter: 10m                 # hibernate after 10min idle
+    resumeOnMail: true             # wake when mailbox receives message

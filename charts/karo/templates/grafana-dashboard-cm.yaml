@@ -1,0 +1,116 @@
+{{- if and .Values.observability.enabled .Values.observability.grafanaDashboard.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "karo.fullname" . }}-grafana-dashboard
+  namespace: {{ include "karo.namespace" . }}
+  labels:
+    {{- include "karo.labels" . | nindent 4 }}
+    {{- range $key, $val := .Values.observability.grafanaDashboard.labels }}
+    {{ $key }}: {{ $val | quote }}
+    {{- end }}
+data:
+  karo-agent-operations.json: |
+    {
+      "dashboard": {
+        "title": "KARO Agent Operations",
+        "uid": "karo-agent-ops",
+        "tags": ["karo", "agents", "kubernetes"],
+        "timezone": "browser",
+        "templating": {
+          "list": [
+            {
+              "name": "namespace",
+              "type": "query",
+              "query": "label_values(karo_taskgraph_total, namespace)",
+              "refresh": 2
+            },
+            {
+              "name": "taskgraph",
+              "type": "query",
+              "query": "label_values(karo_taskgraph_tasks_total{namespace=\"$namespace\"}, taskgraph)",
+              "refresh": 2
+            }
+          ]
+        },
+        "panels": [
+          {
+            "title": "TaskGraphs by Phase",
+            "type": "stat",
+            "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+            "targets": [{ "expr": "sum by (phase) (karo_taskgraph_total{namespace=\"$namespace\"})" }]
+          },
+          {
+            "title": "Active Agents",
+            "type": "stat",
+            "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+            "targets": [{ "expr": "sum by (phase) (karo_agent_instances_total{namespace=\"$namespace\"})" }]
+          },
+          {
+            "title": "Task Completion Rate",
+            "type": "gauge",
+            "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+            "targets": [{ "expr": "avg(karo_taskgraph_completion_percent{namespace=\"$namespace\"})" }],
+            "fieldConfig": { "defaults": { "min": 0, "max": 100, "unit": "percent",
+              "thresholds": { "steps": [
+                { "color": "red", "value": 0 },
+                { "color": "yellow", "value": 50 },
+                { "color": "green", "value": 80 }
+              ]}
+            }}
+          },
+          {
+            "title": "Estimated Daily Cost",
+            "type": "stat",
+            "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+            "targets": [{ "expr": "sum(increase(karo_model_estimated_cost_dollars{namespace=\"$namespace\"}[24h]))" }],
+            "fieldConfig": { "defaults": { "unit": "currencyUSD" } }
+          },
+          {
+            "title": "Task Phase Distribution",
+            "type": "piechart",
+            "gridPos": { "h": 8, "w": 8, "x": 0, "y": 4 },
+            "targets": [{ "expr": "sum by (phase) (karo_taskgraph_tasks_total{namespace=\"$namespace\", taskgraph=\"$taskgraph\"})" }]
+          },
+          {
+            "title": "Task Duration by Type",
+            "type": "barchart",
+            "gridPos": { "h": 8, "w": 8, "x": 8, "y": 4 },
+            "targets": [{ "expr": "histogram_quantile(0.5, sum by (task_type, le) (rate(karo_task_duration_seconds_bucket{namespace=\"$namespace\"}[1h])))" }]
+          },
+          {
+            "title": "Eval Gate Pass Rate",
+            "type": "gauge",
+            "gridPos": { "h": 8, "w": 8, "x": 16, "y": 4 },
+            "targets": [{ "expr": "karo_eval_pass_rate{namespace=\"$namespace\"}" }],
+            "fieldConfig": { "defaults": { "min": 0, "max": 1, "unit": "percentunit" } }
+          },
+          {
+            "title": "Context Token Usage",
+            "type": "timeseries",
+            "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+            "targets": [{ "expr": "karo_agent_context_tokens_used{namespace=\"$namespace\"}", "legendFormat": "{{ "{{" }} agent_instance {{ "}}" }}" }]
+          },
+          {
+            "title": "Model API Latency (p95)",
+            "type": "timeseries",
+            "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+            "targets": [{ "expr": "histogram_quantile(0.95, sum by (model_config, le) (rate(karo_model_latency_seconds_bucket{namespace=\"$namespace\"}[5m])))", "legendFormat": "{{ "{{" }} model_config {{ "}}" }}" }]
+          },
+          {
+            "title": "Model Cost by Provider",
+            "type": "timeseries",
+            "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+            "targets": [{ "expr": "sum by (provider) (increase(karo_model_estimated_cost_dollars{namespace=\"$namespace\"}[1h]))", "legendFormat": "{{ "{{" }} provider {{ "}}" }}" }],
+            "fieldConfig": { "defaults": { "unit": "currencyUSD" } }
+          },
+          {
+            "title": "Dispatch Latency",
+            "type": "heatmap",
+            "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+            "targets": [{ "expr": "sum by (le) (increase(karo_dispatch_latency_seconds_bucket{namespace=\"$namespace\"}[5m]))" }]
+          }
+        ]
+      }
+    }
+{{- end }}

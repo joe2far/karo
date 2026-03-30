@@ -1,0 +1,45 @@
+apiVersion: karo.dev/v1alpha1
+kind: Dispatcher
+metadata:
+  name: alpha-router
+  namespace: team-alpha
+spec:
+  # Routing mode
+  mode: capability                 # capability | llm-route | round-robin
+
+  # Watch these TaskGraphs
+  taskGraphSelector:
+    matchLabels:
+      team: alpha
+
+  # Capability -> AgentSpec routing table
+  capabilityRoutes:
+    - capability: design
+      agentSpecRef:
+        name: planner-agent
+    - capability: impl
+      agentSpecRef:
+        name: coder-agent
+    - capability: eval
+      agentSpecRef:
+        name: test-agent
+    - capability: review
+      agentSpecRef:
+        name: reviewer-agent
+
+  # Fallback if no route matches
+  fallbackAgentSpecRef:
+    name: planner-agent
+
+  # Messaging -- how tasks are delivered to agents
+  messaging:
+    type: mailbox                  # mailbox | webhook | kafka
+    mailboxPattern: "{agentSpec}-mailbox"
+
+  # LLM-based routing config (used when mode: llm-route)
+  llmRoute:
+    modelConfigRef:
+      name: claude-sonnet-direct
+    routingPromptRef:
+      configMapRef:
+        name: dispatcher-routing-prompt

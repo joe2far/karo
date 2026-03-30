@@ -1,0 +1,115 @@
+{{- if and .Values.observability.enabled .Values.observability.vmRule.enabled }}
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: {{ include "karo.fullname" . }}-alerts
+  namespace: {{ include "karo.namespace" . }}
+  labels:
+    {{- include "karo.labels" . | nindent 4 }}
+spec:
+  groups:
+    - name: karo-taskgraph
+      rules:
+        - alert: KAROTaskGraphStuck
+          expr: |
+            karo_taskgraph_total{phase="InProgress"} > 0
+            and on(namespace, taskgraph) (
+              time() - karo_taskgraph_duration_seconds > 3600
+            )
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "TaskGraph {{ "{{" }} $labels.taskgraph {{ "}}" }} in {{ "{{" }} $labels.namespace {{ "}}" }} has been InProgress for over 1 hour"
+
+        - alert: KAROTaskFailureRateHigh
+          expr: |
+            rate(karo_task_transitions_total{to_phase="Failed"}[15m])
+            / rate(karo_task_transitions_total[15m]) > 0.3
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Task failure rate exceeds 30% in {{ "{{" }} $labels.namespace {{ "}}" }}"
+
+        - alert: KAROEvalGateFailureRateHigh
+          expr: karo_eval_pass_rate < 0.7
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "EvalSuite {{ "{{" }} $labels.eval_suite {{ "}}" }} pass rate dropped below 70%"
+
+    - name: karo-agents
+      rules:
+        - alert: KAROAgentContextNearExhaustion
+          expr: |
+            karo_agent_context_tokens_used
+            / on(namespace, agent_instance) group_left
+            karo_agent_context_tokens_max > 0.85
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Agent {{ "{{" }} $labels.agent_instance {{ "}}" }} context usage above 85%"
+
+        - alert: KAROAgentHibernatedTooLong
+          expr: |
+            karo_agent_instances_total{phase="Hibernated"} > 0
+            and on(namespace, agent_spec)
+            karo_mailbox_pending_messages > 0
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Agent {{ "{{" }} $labels.agent_spec {{ "}}" }} is hibernated but has pending mailbox messages"
+
+    - name: karo-model
+      rules:
+        - alert: KAROModelRateLimited
+          expr: rate(karo_model_rate_limit_hits_total[5m]) > 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "ModelConfig {{ "{{" }} $labels.model_config {{ "}}" }} is being rate limited"
+
+        - alert: KAROModelErrorRateHigh
+          expr: |
+            rate(karo_model_errors_total[5m])
+            / rate(karo_model_requests_total[5m]) > 0.1
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Model error rate exceeds 10% for {{ "{{" }} $labels.model_config {{ "}}" }}"
+
+        - alert: KARODailyCostThresholdExceeded
+          expr: |
+            increase(karo_model_estimated_cost_dollars[24h]) > 100
+          labels:
+            severity: warning
+          annotations:
+            summary: "Estimated daily model API cost exceeds $100 for {{ "{{" }} $labels.model_config {{ "}}" }}"
+
+    - name: karo-mailbox
+      rules:
+        - alert: KAROMailboxNearCapacity
+          expr: |
+            karo_mailbox_pending_messages
+            / on(namespace, mailbox) karo_mailbox_max_pending > 0.8
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Mailbox {{ "{{" }} $labels.mailbox {{ "}}" }} is at 80% capacity"
+
+    - name: karo-channel
+      rules:
+        - alert: KAROApprovalPendingTooLong
+          expr: karo_channel_approval_duration_seconds > 7200
+          labels:
+            severity: warning
+          annotations:
+            summary: "Approval pending for over 2 hours in channel {{ "{{" }} $labels.channel {{ "}}" }}"
+{{- end }}

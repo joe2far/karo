@@ -1,0 +1,37 @@
+{{- if and .Values.observability.enabled .Values.observability.vmServiceScrape.enabled }}
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMServiceScrape
+metadata:
+  name: {{ include "karo.fullname" . }}-operator-metrics
+  namespace: {{ include "karo.namespace" . }}
+  labels:
+    {{- include "karo.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "karo.selectorLabels" . | nindent 6 }}
+  endpoints:
+    - port: metrics
+      interval: {{ .Values.observability.vmServiceScrape.interval | default "15s" }}
+      path: {{ .Values.observability.metrics.path | default "/metrics" }}
+---
+{{- if .Values.observability.vmPodScrape.enabled }}
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMPodScrape
+metadata:
+  name: {{ include "karo.fullname" . }}-sidecar-metrics
+  namespace: {{ include "karo.namespace" . }}
+  labels:
+    {{- include "karo.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      karo.dev/component: agent-runtime-mcp
+  podMetricsEndpoints:
+    - port: debug
+      interval: {{ .Values.observability.vmPodScrape.interval | default "30s" }}
+      path: /metrics
+  namespaceSelector:
+    any: true
+{{- end }}
+{{- end }}

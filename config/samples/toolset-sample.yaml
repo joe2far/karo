@@ -1,0 +1,36 @@
+apiVersion: karo.dev/v1alpha1
+kind: ToolSet
+metadata:
+  name: alpha-permitted-tools
+  namespace: team-alpha
+spec:
+  tools:
+    - name: github
+      type: mcp
+      transport: streamable-http     # stdio | sse | streamable-http
+      endpoint: "http://github-mcp-server:8080"
+      permissions:
+        - read
+        - write
+      credentialSecret:
+        name: github-mcp-credentials
+        key: GITHUB_TOKEN
+
+    - name: web-search
+      type: mcp
+      transport: sse
+      endpoint: "http://web-search-mcp:8080"
+      permissions:
+        - search
+
+    - name: code-executor
+      type: mcp
+      transport: stdio               # stdio -- runs as subprocess, no endpoint needed
+      command: ["/usr/local/bin/code-exec-mcp"]  # binary path inside agent pod
+      permissions:
+        - execute
+      sandboxRequired: true        # requires SandboxClass enforcement
+
+  # Policy reference for additional governance
+  policyRef:
+    name: alpha-policy

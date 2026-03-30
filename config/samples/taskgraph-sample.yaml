@@ -1,0 +1,93 @@
+apiVersion: karo.dev/v1alpha1
+kind: TaskGraph
+metadata:
+  name: feature-auth
+  namespace: team-alpha
+  labels:
+    team: alpha
+spec:
+  description: "Implement OAuth2 authentication flow"
+
+  # The agent responsible for managing this graph (planner role)
+  ownerAgentRef:
+    name: planner-agent
+
+  # Dispatcher to use when tasks become ready
+  dispatcherRef:
+    name: alpha-router
+
+  # The tasks -- form the DAG
+  tasks:
+    - id: design
+      title: "Design OAuth2 API contract"
+      type: design
+      description: "Define OpenAPI spec for auth endpoints"
+      deps: []
+      priority: High
+      addedBy: planner-agent
+      addedAt: "2026-03-27T09:00:00Z"
+      timeoutMinutes: 120
+      acceptanceCriteria:
+        - "OpenAPI spec committed to repo"
+        - "Auth flow diagram approved"
+
+    - id: schema
+      title: "Design user/session DB schema"
+      type: design
+      deps: [design]
+      priority: High
+      addedBy: planner-agent
+      addedAt: "2026-03-27T09:00:00Z"
+      timeoutMinutes: 120
+      acceptanceCriteria:
+        - "Migration files created"
+
+    - id: impl-auth
+      title: "Implement auth endpoints"
+      type: impl
+      deps: [design, schema]
+      priority: High
+      addedBy: planner-agent
+      addedAt: "2026-03-27T09:00:00Z"
+      timeoutMinutes: 240
+      acceptanceCriteria:
+        - "All endpoints return correct HTTP codes"
+        - "Unit tests passing"
+      evalGate:
+        evalSuiteRef:
+          name: alpha-evals
+        minPassRate: 0.90
+        onFail: Reopen
+      sandboxClassOverride:
+        name: alpha-restricted
+
+    - id: impl-middleware
+      title: "Implement auth middleware"
+      type: impl
+      deps: [impl-auth]
+      priority: Medium
+      addedBy: planner-agent
+      addedAt: "2026-03-27T09:00:00Z"
+      timeoutMinutes: 180
+
+    - id: eval-auth
+      title: "Write and run auth test suite"
+      type: eval
+      deps: [impl-auth, impl-middleware]
+      priority: High
+      addedBy: planner-agent
+      addedAt: "2026-03-27T09:00:00Z"
+      timeoutMinutes: 120
+      acceptanceCriteria:
+        - "95%+ test coverage on auth package"
+        - "All integration tests pass"
+
+  # Dispatch policy
+  dispatchPolicy:
+    maxConcurrent: 3
+    defaultTimeoutMinutes: 60
+    retryPolicy:
+      maxRetries: 2
+      backoffSeconds: 60
+      onExhaustion: EscalateToHuman
+    allowAgentMutation: true

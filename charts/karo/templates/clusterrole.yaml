@@ -1,0 +1,43 @@
+{{- if .Values.rbac.create }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "karo.fullname" . }}-manager
+  labels:
+    {{- include "karo.labels" . | nindent 4 }}
+rules:
+  # KARO CRDs - full access
+  - apiGroups: ["karo.dev"]
+    resources: ["*"]
+    verbs: ["*"]
+
+  # Core resources
+  - apiGroups: [""]
+    resources: ["pods", "pods/status", "configmaps", "secrets", "events", "serviceaccounts"]
+    verbs: ["*"]
+
+  # Batch resources
+  - apiGroups: ["batch"]
+    resources: ["cronjobs", "jobs"]
+    verbs: ["*"]
+
+  # Network policies
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["*"]
+
+  # Runtime classes (read-only)
+  - apiGroups: ["node.k8s.io"]
+    resources: ["runtimeclasses"]
+    verbs: ["get", "list", "watch"]
+
+  # Leader election
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  # Events
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+{{- end }}

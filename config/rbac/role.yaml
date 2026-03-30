@@ -1,0 +1,110 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: manager-role
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - batch
+  resources:
+  - cronjobs
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - karo.dev
+  resources:
+  - agentchannels
+  - agentinstances
+  - agentloops
+  - agentmailboxes
+  - agentpolicies
+  - agentspecs
+  - agentteams
+  - dispatchers
+  - evalsuites
+  - memorystores
+  - modelconfigs
+  - sandboxclasses
+  - taskgraphs
+  - toolsets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - karo.dev
+  resources:
+  - agentchannels/finalizers
+  - agentinstances/finalizers
+  - agentloops/finalizers
+  - agentmailboxes/finalizers
+  - agentpolicies/finalizers
+  - agentspecs/finalizers
+  - agentteams/finalizers
+  - dispatchers/finalizers
+  - evalsuites/finalizers
+  - memorystores/finalizers
+  - modelconfigs/finalizers
+  - sandboxclasses/finalizers
+  - taskgraphs/finalizers
+  - toolsets/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - karo.dev
+  resources:
+  - agentchannels/status
+  - agentinstances/status
+  - agentloops/status
+  - agentmailboxes/status
+  - agentpolicies/status
+  - agentspecs/status
+  - agentteams/status
+  - dispatchers/status
+  - evalsuites/status
+  - memorystores/status
+  - modelconfigs/status
+  - sandboxclasses/status
+  - taskgraphs/status
+  - toolsets/status
+  verbs:
+  - get
+  - patch
+  - update

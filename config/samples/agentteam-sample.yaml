@@ -1,0 +1,42 @@
+apiVersion: karo.dev/v1alpha1
+kind: AgentTeam
+metadata:
+  name: alpha-team
+  namespace: team-alpha
+spec:
+  description: "Full-stack feature development team"
+
+  # Team members with roles
+  agents:
+    - agentSpecRef:
+        name: planner-agent
+      role: orchestrator           # orchestrator | executor | evaluator | reviewer
+    - agentSpecRef:
+        name: coder-agent
+      role: executor
+    - agentSpecRef:
+        name: reviewer-agent
+      role: evaluator
+
+  # Shared resources -- applied to all agents in team unless overridden on AgentSpec
+  sharedResources:
+    memoryRef:
+      name: team-shared-memory
+    toolSetRef:
+      name: alpha-permitted-tools
+    sandboxClassRef:
+      name: alpha-restricted
+    modelConfigRef:
+      name: claude-sonnet-direct
+
+  # Dispatcher for this team
+  dispatcherRef:
+    name: alpha-router
+
+  # Policy applied to all team members
+  policyRef:
+    name: alpha-policy
+
+  # Loop for team-level heartbeat
+  loopRef:
+    name: daily-review

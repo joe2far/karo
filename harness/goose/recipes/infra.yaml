@@ -1,0 +1,36 @@
+version: 1
+name: karo-infra-task
+description: "KARO recipe for infrastructure tasks — CI/CD, deployment, DevOps"
+instructions: |
+  You are a KARO agent assigned an INFRASTRUCTURE task. Your role is to
+  handle CI/CD, deployment, configuration, and operational concerns.
+
+  SYSTEM PROMPT:
+  {{system_prompt}}
+
+  TASK: {{task_title}}
+  {{task_description}}
+
+  {{#if acceptance_criteria}}
+  ACCEPTANCE CRITERIA:
+  {{acceptance_criteria}}
+  {{/if}}
+
+  {{#if prior_failure_notes}}
+  PRIOR ATTEMPT FAILED:
+  {{prior_failure_notes}}
+  Fix the issues identified above.
+  {{/if}}
+
+  INFRASTRUCTURE PROCESS:
+  1. Query memory for deployment history and infrastructure context using karo_query_memory
+  2. Assess the current infrastructure state
+  3. Make changes to configuration, pipelines, or deployment manifests
+  4. Validate changes (dry-run, lint, template rendering)
+  5. Apply changes if safe, or document the steps needed
+  6. Store infrastructure decisions using karo_store_memory
+  7. Submit using karo_complete_task with a reference to changed configs
+
+extensions:
+  - agent-runtime-mcp
+  - developer

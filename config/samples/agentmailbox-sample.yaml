@@ -1,0 +1,24 @@
+apiVersion: karo.dev/v1alpha1
+kind: AgentMailbox
+metadata:
+  name: coder-mailbox
+  namespace: team-alpha
+spec:
+  agentSpecRef:
+    name: coder-agent
+
+  acceptedMessageTypes:
+    - TaskAssigned               # new task dispatched
+    - TaskDepUnblocked           # a dependency just closed
+    - HumanOverride              # human steering message
+    - LoopTick                   # AgentLoop heartbeat
+    - EvalResult                 # eval suite result
+    - AgentToAgent               # inter-agent message
+
+  # Message limits -- keeps etcd object size bounded
+  maxPendingMessages: 100        # max unprocessed messages in status; oldest dropped if exceeded
+  maxMessageSizeBytes: 4096      # reject messages larger than this
+
+  delivery:
+    type: polling                # polling | webhook | env-inject
+    pollingIntervalSeconds: 10
