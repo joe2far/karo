@@ -5206,6 +5206,18 @@ TaskGraph — durable task DAG, dep enforcement, retry, eval    ← IN KARO v1al
 A2A    — optional peer agent dialogue / external delegation   ← FUTURE consideration
 ```
 
+### Complementary Ecosystem Projects
+
+> **Not included in KARO — noted here for architectural awareness.**
+
+The following open-source projects operate at layers KARO intentionally leaves to external systems and pair naturally with a KARO deployment:
+
+- **[llm-d](https://github.com/llm-d/llm-d)** — Kubernetes-native distributed LLM inference built on vLLM. Provides high-performance model serving with smart load balancing (KV-cache aware, P/D aware) and scale-to-zero. Fits behind `ModelConfig` as a self-hosted inference backend (reachable via an OpenAI-compatible endpoint). KARO orchestrates agents; llm-d serves the models those agents call.
+
+- **[Agent Gateway](https://github.com/agentgateway/agentgateway)** — Open-source proxy for agent-to-LLM, agent-to-tool, and agent-to-agent traffic using MCP and A2A protocols. Provides request-level governance, observability, failover, and budget controls. Sits between `ModelConfig`/`ToolSet` endpoints and upstream providers, adding runtime traffic management that complements KARO's CRD-level governance.
+
+These projects are **not dependencies** and KARO does not integrate with them directly. They are noted here because they address the inference serving and request-level governance layers that KARO's control-plane design deliberately excludes.
+
 ---
 
 ## References
@@ -5224,3 +5236,5 @@ A2A    — optional peer agent dialogue / external delegation   ← FUTURE consi
 - [CNCF AI Conformance Program](https://github.com/cncf/ai-conformance) — KARs for agentic workloads
 - [AWS Bedrock API](https://docs.aws.amazon.com/bedrock/) — Bedrock model invocation, IRSA auth pattern
 - [Google Vertex AI](https://cloud.google.com/vertex-ai) — Vertex model serving, Workload Identity pattern
+- [llm-d](https://github.com/llm-d/llm-d) — Kubernetes-native distributed LLM inference; complementary infrastructure layer
+- [Agent Gateway](https://github.com/agentgateway/agentgateway) — MCP/A2A proxy for agent traffic governance; complementary infrastructure layer

@@ -1,6 +1,10 @@
-# KARO
+<p align="center">
+  <img src="docs/logo.svg" alt="KARO — Kubernetes Agent Runtime Orchestrator" width="480" />
+</p>
 
-**Kubernetes Agent Runtime Orchestrator** (pronounced *KAH-roh*, rhymes with "pharaoh")
+<p align="center">
+  <em>Pronounced <strong>KAH-roh</strong>, rhymes with "pharaoh"</em>
+</p>
 
 KARO is a Kubernetes-native operator that provides first-class CRD primitives for deploying, orchestrating, and governing AI agents at scale. It brings the same declarative, observable, and policy-driven approach that Kubernetes uses for containers to the world of AI agents.
 
