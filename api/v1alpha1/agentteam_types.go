@@ -7,6 +7,7 @@ import (
 
 type AgentTeamSpec struct {
 	Description     string                      `json:"description,omitempty"`
+	// +kubebuilder:validation:MinItems=1
 	Agents          []AgentTeamMember           `json:"agents"`
 	SharedResources TeamSharedResources         `json:"sharedResources,omitempty"`
 	DispatcherRef   corev1.LocalObjectReference `json:"dispatcherRef"`
@@ -16,6 +17,7 @@ type AgentTeamSpec struct {
 
 type AgentTeamMember struct {
 	AgentSpecRef corev1.LocalObjectReference `json:"agentSpecRef"`
+	// +kubebuilder:validation:Enum=orchestrator;executor;evaluator;reviewer
 	Role         string                      `json:"role"`
 }
 

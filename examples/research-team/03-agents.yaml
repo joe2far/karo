@@ -1,0 +1,191 @@
+---
+# Research Lead: plans investigations, synthesizes findings
+apiVersion: karo.dev/v1alpha1
+kind: AgentSpec
+metadata:
+  name: research-lead
+  namespace: research-team
+  labels:
+    team: research
+    role: orchestrator
+spec:
+  modelConfigRef:
+    name: claude-sonnet
+  systemPrompt:
+    inline: |
+      You are a senior research lead. Your role is to:
+      1. Plan research investigations with clear hypotheses and methodology
+      2. Synthesize findings from literature reviews and data analysis
+      3. Write research reports with citations and evidence
+      4. Identify gaps in research and create follow-up tasks
+      5. Present findings in clear, structured documents
+
+      When planning research:
+      - Define clear research questions
+      - Break investigations into literature review, data collection, analysis, and synthesis phases
+      - Set acceptance criteria that ensure rigor and reproducibility
+      - Always cite sources and distinguish facts from interpretations
+  capabilities:
+    - name: design
+      skillPrompt:
+        inline: |
+          Create a research plan with:
+          - Research question and hypothesis
+          - Methodology description
+          - Data sources to investigate
+          - Expected deliverables
+          - Success criteria
+    - name: review
+      skillPrompt:
+        inline: |
+          Review the research output for:
+          - Accuracy of claims and citations
+          - Soundness of methodology
+          - Completeness of analysis
+          - Clarity of presentation
+  memoryRef:
+    name: research-memory
+  toolSetRef:
+    name: research-tools
+  runtime:
+    image: ghcr.io/karo-dev/karo-claude-code-harness:latest
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "1Gi"
+      limits:
+        cpu: "2"
+        memory: "4Gi"
+  maxContextTokens: 200000
+  onContextExhaustion: checkpoint
+  dispatchable: true
+  scaling:
+    minInstances: 0
+    maxInstances: 2
+    startPolicy: OnDemand
+    cooldownSeconds: 300
+---
+# Literature Agent: searches papers and documentation
+apiVersion: karo.dev/v1alpha1
+kind: AgentSpec
+metadata:
+  name: literature-agent
+  namespace: research-team
+  labels:
+    team: research
+    role: executor
+spec:
+  modelConfigRef:
+    name: claude-sonnet
+  systemPrompt:
+    inline: |
+      You are a research literature specialist. Your role is to:
+      1. Search for academic papers, blog posts, and documentation
+      2. Read and summarize key findings from sources
+      3. Extract relevant data points, quotes, and references
+      4. Organize findings into structured summaries
+      5. Identify contradictions and consensus across sources
+
+      Guidelines:
+      - Always record the source URL/DOI for every finding
+      - Distinguish between peer-reviewed and non-peer-reviewed sources
+      - Note the date of publication for currency assessment
+      - Store key findings in team memory for cross-reference
+  capabilities:
+    - name: impl
+      skillPrompt:
+        inline: |
+          Search for and analyze literature on the given topic.
+          For each source found:
+          1. Record the title, author, date, and URL
+          2. Summarize key findings in 2-3 paragraphs
+          3. Extract relevant data points
+          4. Rate the source quality (high/medium/low)
+          Store findings in team memory for synthesis.
+      requiredTools:
+        - web-search
+        - web-fetch
+  memoryRef:
+    name: research-memory
+  toolSetRef:
+    name: research-tools
+  sandboxClassRef:
+    name: research-sandbox
+  runtime:
+    image: ghcr.io/karo-dev/karo-claude-code-harness:latest
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "1Gi"
+      limits:
+        cpu: "2"
+        memory: "4Gi"
+  maxContextTokens: 200000
+  onContextExhaustion: restart
+  dispatchable: true
+  scaling:
+    minInstances: 0
+    maxInstances: 3
+    startPolicy: OnDemand
+    cooldownSeconds: 300
+---
+# Analyst Agent: data analysis and experiments
+apiVersion: karo.dev/v1alpha1
+kind: AgentSpec
+metadata:
+  name: analyst-agent
+  namespace: research-team
+  labels:
+    team: research
+    role: executor
+spec:
+  modelConfigRef:
+    name: claude-sonnet
+  systemPrompt:
+    inline: |
+      You are a data analyst and research experimenter. Your role is to:
+      1. Analyze data sets and produce statistical summaries
+      2. Create and run experiments to validate hypotheses
+      3. Build benchmarks and comparison tables
+      4. Produce charts, graphs, and visualizations (as code)
+      5. Validate findings with quantitative evidence
+
+      Guidelines:
+      - Use Python/pandas for data analysis when possible
+      - Always show your methodology and statistical methods
+      - Report confidence intervals and p-values where applicable
+      - Document any assumptions or limitations
+  capabilities:
+    - name: eval
+      skillPrompt:
+        inline: |
+          Analyze the provided data or run the specified experiment:
+          1. Load and inspect the data
+          2. Perform the requested analysis
+          3. Produce summary statistics and visualizations
+          4. Document findings and methodology
+      requiredTools:
+        - code-executor
+  memoryRef:
+    name: research-memory
+  toolSetRef:
+    name: research-tools
+  sandboxClassRef:
+    name: research-sandbox
+  runtime:
+    image: ghcr.io/karo-dev/karo-goose-harness:latest
+    resources:
+      requests:
+        cpu: "1"
+        memory: "2Gi"
+      limits:
+        cpu: "4"
+        memory: "8Gi"
+  maxContextTokens: 200000
+  onContextExhaustion: restart
+  dispatchable: true
+  scaling:
+    minInstances: 0
+    maxInstances: 3
+    startPolicy: OnDemand
+    cooldownSeconds: 300

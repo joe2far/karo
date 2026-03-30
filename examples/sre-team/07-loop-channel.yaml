@@ -1,0 +1,105 @@
+---
+# AgentLoop: weekly capacity review
+apiVersion: karo.dev/v1alpha1
+kind: AgentLoop
+metadata:
+  name: capacity-review
+  namespace: sre-team
+spec:
+  agentSpecRef:
+    name: capacity-planner
+
+  triggers:
+    - type: cron
+      schedule: "0 9 * * 1"     # Every Monday at 9am
+    - type: event
+      source:
+        kind: TaskGraph
+        name: "*"
+        event: TaskFailed        # Trigger on incident task failures
+
+  dispatcherRef:
+    name: sre-router
+
+  contextCarryover: true         # Carry over prior capacity data
+---
+# AgentLoop: incident watcher (event-driven)
+apiVersion: karo.dev/v1alpha1
+kind: AgentLoop
+metadata:
+  name: incident-watcher
+  namespace: sre-team
+spec:
+  agentSpecRef:
+    name: incident-commander
+
+  triggers:
+    - type: webhook             # Triggered by PagerDuty/alertmanager webhook
+    - type: cron
+      schedule: "*/30 * * * *"  # Also poll every 30m for stale incidents
+
+  dispatcherRef:
+    name: sre-router
+
+  contextCarryover: false        # Each incident is independent
+---
+# AgentChannel: Slack for SRE team
+apiVersion: karo.dev/v1alpha1
+kind: AgentChannel
+metadata:
+  name: sre-slack
+  namespace: sre-team
+spec:
+  platform:
+    type: slack
+    slack:
+      appCredentialSecret:
+        name: slack-app-credentials
+        key: BOT_TOKEN
+      signingSecret:
+        name: slack-signing-secret
+        key: SIGNING_SECRET
+      channelId: "C0SRE-INCIDENTS"
+
+  inbound:
+    defaultTeamRef:
+      name: sre-team
+    mode: auto
+    autoRoute:
+      modelConfigRef:
+        name: claude-sonnet
+      classificationPrompt:
+        inline: |
+          Classify the incoming message as one of: incident, capacity-review, or general.
+          If it mentions an alert, outage, or error — classify as incident.
+          If it mentions scaling, resources, or capacity — classify as capacity-review.
+          Otherwise classify as general.
+
+  outbound:
+    notifyOn:
+      - taskGraphCreated
+      - taskGraphCompleted
+      - taskFailed
+      - approvalRequired
+      - evalGateFailed
+    format: detailed
+
+  approvals:
+    enabled: true
+    style: interactive
+    timeoutMinutes: 60           # 1h for production fixes (urgent)
+    onTimeout: Fail
+
+  teamHandoff:
+    - fromTeamRef:
+        name: dev-team
+      toTeamRef:
+        name: sre-team
+      trigger: DeploymentReady
+      requireApproval: false     # SRE auto-accepts deployment notifications
+    - fromTeamRef:
+        name: sre-team
+      toTeamRef:
+        name: dev-team
+      trigger: BugIdentified
+      requireApproval: true      # Dev team must accept bug assignments

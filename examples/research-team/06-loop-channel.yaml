@@ -1,0 +1,61 @@
+---
+# AgentLoop: weekly research digest
+apiVersion: karo.dev/v1alpha1
+kind: AgentLoop
+metadata:
+  name: weekly-digest
+  namespace: research-team
+spec:
+  agentSpecRef:
+    name: research-lead
+
+  triggers:
+    - type: cron
+      schedule: "0 9 * * 1"   # Monday 9am
+
+  dispatcherRef:
+    name: research-router
+
+  contextCarryover: true
+---
+# AgentChannel: Slack for research reviews
+apiVersion: karo.dev/v1alpha1
+kind: AgentChannel
+metadata:
+  name: research-slack
+  namespace: research-team
+spec:
+  platform:
+    type: slack
+    slack:
+      appCredentialSecret:
+        name: slack-app-credentials
+        key: BOT_TOKEN
+      signingSecret:
+        name: slack-signing-secret
+        key: SIGNING_SECRET
+      channelId: "C0RESEARCH"
+
+  inbound:
+    defaultTeamRef:
+      name: research-team
+    mode: task-creation
+    taskGraphTemplate:
+      ownerAgentRef:
+        name: research-lead
+      dispatcherRef:
+        name: research-router
+      initialTaskType: design
+
+  outbound:
+    notifyOn:
+      - taskGraphCompleted
+      - taskFailed
+      - approvalRequired
+    format: summary
+
+  approvals:
+    enabled: true
+    style: interactive
+    timeoutMinutes: 2880          # 48h for research reviews
+    onTimeout: Escalate

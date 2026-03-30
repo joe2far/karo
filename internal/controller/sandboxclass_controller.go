@@ -2,6 +2,8 @@ package controller
 
 import (
 	"context"
+	"fmt"
+	"net"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -12,6 +14,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	karov1alpha1 "github.com/joe2far/karo/api/v1alpha1"
+	"github.com/joe2far/karo/internal/network"
 )
 
 const sandboxClassFinalizer = "karo.dev/sandboxclass-finalizer"
@@ -19,12 +22,16 @@ const sandboxClassFinalizer = "karo.dev/sandboxclass-finalizer"
 // +kubebuilder:rbac:groups=karo.dev,resources=sandboxclasses,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=karo.dev,resources=sandboxclasses/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=karo.dev,resources=sandboxclasses/finalizers,verbs=update
+// +kubebuilder:rbac:groups=node.k8s.io,resources=runtimeclasses,verbs=get;list;watch
+// +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=cilium.io,resources=ciliumnetworkpolicies,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
 type SandboxClassReconciler struct {
 	client.Client
-	Scheme   *runtime.Scheme
-	Recorder record.EventRecorder
+	Scheme        *runtime.Scheme
+	Recorder      record.EventRecorder
+	PolicyManager *network.PolicyManager
 }
 
 func (r *SandboxClassReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -35,9 +42,14 @@ func (r *SandboxClassReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// Handle deletion.
+	// Handle deletion — clean up network policies.
 	if !sandboxClass.DeletionTimestamp.IsZero() {
 		if controllerutil.ContainsFinalizer(&sandboxClass, sandboxClassFinalizer) {
+			if r.PolicyManager != nil {
+				if err := r.PolicyManager.CleanupPolicies(ctx, &sandboxClass); err != nil {
+					logger.Error(err, "failed to cleanup network policies on deletion")
+				}
+			}
 			controllerutil.RemoveFinalizer(&sandboxClass, sandboxClassFinalizer)
 			if err := r.Update(ctx, &sandboxClass); err != nil {
 				return ctrl.Result{}, err
@@ -54,21 +66,104 @@ func (r *SandboxClassReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		}
 	}
 
+	var warnings []string
+
 	// Validate runtimeClassName.
 	runtimeClassAvailable := sandboxClass.Spec.RuntimeClassName != ""
 	if !runtimeClassAvailable {
 		logger.Info("SandboxClass has no runtimeClassName set")
 	}
 
+	// Validate network policy configuration.
+	np := sandboxClass.Spec.NetworkPolicy
+	switch np.Egress {
+	case "restricted", "open", "none", "":
+		// Valid values.
+	default:
+		warnings = append(warnings, fmt.Sprintf("unsupported egress policy: %s (supported: restricted, open, none)", np.Egress))
+	}
+
+	for _, cidr := range np.AllowedCIDRs {
+		if _, _, err := net.ParseCIDR(cidr); err != nil {
+			warnings = append(warnings, fmt.Sprintf("invalid CIDR %q: %v", cidr, err))
+		}
+	}
+
+	// Validate security context.
+	sc := sandboxClass.Spec.SecurityContext
+	if sc.RunAsNonRoot && sc.RunAsUser != nil && *sc.RunAsUser == 0 {
+		warnings = append(warnings, "runAsNonRoot is true but runAsUser is 0 (root)")
+	}
+
+	// Detect CNI and create/update network policies.
+	var cniType network.CNIType
+	if r.PolicyManager != nil && len(warnings) == 0 {
+		cniType = r.PolicyManager.DetectCNI(ctx)
+		logger.Info("detected CNI", "type", cniType)
+
+		if err := r.PolicyManager.EnsureNetworkPolicy(ctx, &sandboxClass, cniType); err != nil {
+			warnings = append(warnings, fmt.Sprintf("failed to ensure network policy: %v", err))
+			r.Recorder.Eventf(&sandboxClass, "Warning", "NetworkPolicyFailed",
+				"Failed to create/update network policy: %v", err)
+		} else if np.Egress == "restricted" {
+			r.Recorder.Eventf(&sandboxClass, "Normal", "NetworkPolicyApplied",
+				"Network policy applied via %s (domains: %d, CIDRs: %d)",
+				cniType, len(np.AllowedDomains), len(np.AllowedCIDRs))
+		}
+	}
+
 	// Update status.
-	sandboxClass.Status.Phase = "Ready"
 	sandboxClass.Status.RuntimeClassAvailable = runtimeClassAvailable
+
+	if len(warnings) > 0 {
+		sandboxClass.Status.Phase = "Degraded"
+		setCondition(&sandboxClass.Status.Conditions, metav1.Condition{
+			Type:               "ConfigValid",
+			Status:             metav1.ConditionFalse,
+			ObservedGeneration: sandboxClass.Generation,
+			LastTransitionTime: metav1.Now(),
+			Reason:             "ConfigWarnings",
+			Message:            fmt.Sprintf("Configuration warnings: %v", warnings),
+		})
+	} else {
+		sandboxClass.Status.Phase = "Ready"
+		setCondition(&sandboxClass.Status.Conditions, metav1.Condition{
+			Type:               "ConfigValid",
+			Status:             metav1.ConditionTrue,
+			ObservedGeneration: sandboxClass.Generation,
+			LastTransitionTime: metav1.Now(),
+			Reason:             "ConfigValid",
+			Message:            "SandboxClass configuration is valid",
+		})
+	}
+
+	// Set NetworkPolicy condition.
+	if np.Egress == "restricted" || np.Egress == "none" {
+		npCondStatus := metav1.ConditionTrue
+		npReason := "PolicyApplied"
+		npMsg := fmt.Sprintf("Network policy enforced via %s", cniType)
+		if len(warnings) > 0 {
+			npCondStatus = metav1.ConditionFalse
+			npReason = "PolicyFailed"
+			npMsg = "Network policy could not be applied"
+		}
+		setCondition(&sandboxClass.Status.Conditions, metav1.Condition{
+			Type:               "NetworkPolicyApplied",
+			Status:             npCondStatus,
+			ObservedGeneration: sandboxClass.Generation,
+			LastTransitionTime: metav1.Now(),
+			Reason:             npReason,
+			Message:            npMsg,
+		})
+	}
 
 	conditionStatus := metav1.ConditionTrue
 	conditionMessage := "RuntimeClass is available"
+	conditionReason := "Available"
 	if !runtimeClassAvailable {
 		conditionStatus = metav1.ConditionFalse
 		conditionMessage = "RuntimeClassName is not set"
+		conditionReason = "NotSet"
 	}
 
 	setCondition(&sandboxClass.Status.Conditions, metav1.Condition{
@@ -76,7 +171,7 @@ func (r *SandboxClassReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		Status:             conditionStatus,
 		ObservedGeneration: sandboxClass.Generation,
 		LastTransitionTime: metav1.Now(),
-		Reason:             "Validated",
+		Reason:             conditionReason,
 		Message:            conditionMessage,
 	})
 
@@ -105,7 +200,6 @@ func setCondition(conditions *[]metav1.Condition, condition metav1.Condition) {
 			if c.Status != condition.Status {
 				(*conditions)[i] = condition
 			} else {
-				// Update fields but keep the original transition time.
 				(*conditions)[i].Reason = condition.Reason
 				(*conditions)[i].Message = condition.Message
 				(*conditions)[i].ObservedGeneration = condition.ObservedGeneration

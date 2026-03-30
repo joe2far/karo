@@ -1,0 +1,213 @@
+---
+# Planner Agent: architecture and task planning
+apiVersion: karo.dev/v1alpha1
+kind: AgentSpec
+metadata:
+  name: planner-agent
+  namespace: dev-team
+  labels:
+    team: dev
+    role: orchestrator
+spec:
+  modelConfigRef:
+    name: claude-sonnet
+  systemPrompt:
+    configMapRef:
+      name: planner-agent-prompt
+      key: prompt.txt
+  capabilities:
+    - name: design
+      skillPrompt:
+        inline: |
+          Create a detailed design document including:
+          - System architecture diagram
+          - API contracts (OpenAPI if applicable)
+          - Data model/schema
+          - Sequence diagrams for key flows
+    - name: review
+      skillPrompt:
+        inline: |
+          Review the submitted work against the task's acceptance criteria.
+          Provide specific, actionable feedback.
+  memoryRef:
+    name: dev-team-memory
+  toolSetRef:
+    name: dev-tools
+  runtime:
+    image: ghcr.io/karo-dev/karo-claude-code-harness:latest
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "1Gi"
+      limits:
+        cpu: "2"
+        memory: "4Gi"
+  maxContextTokens: 200000
+  onContextExhaustion: checkpoint
+  dispatchable: true
+  scaling:
+    minInstances: 0
+    maxInstances: 2
+    startPolicy: OnDemand
+    cooldownSeconds: 300
+---
+# Coder Agent: feature implementation
+apiVersion: karo.dev/v1alpha1
+kind: AgentSpec
+metadata:
+  name: coder-agent
+  namespace: dev-team
+  labels:
+    team: dev
+    role: executor
+spec:
+  modelConfigRef:
+    name: claude-sonnet
+  systemPrompt:
+    configMapRef:
+      name: coder-agent-prompt
+      key: prompt.txt
+  capabilities:
+    - name: impl
+      skillPrompt:
+        inline: |
+          Implement the feature as specified in the task description.
+          Write clean code with unit tests. Commit to the feature branch.
+      requiredTools:
+        - github
+        - code-executor
+    - name: debugging
+      requiredTools:
+        - code-executor
+  memoryRef:
+    name: dev-team-memory
+  toolSetRef:
+    name: dev-tools
+  sandboxClassRef:
+    name: dev-sandbox
+  workspaceCredentials:
+    git:
+      - name: github
+        type: token
+        host: "github.com"
+        credentialSecret:
+          name: coder-git-token
+          key: GITHUB_TOKEN
+        scope: push
+  runtime:
+    image: ghcr.io/karo-dev/karo-goose-harness:latest
+    resources:
+      requests:
+        cpu: "1"
+        memory: "2Gi"
+      limits:
+        cpu: "4"
+        memory: "8Gi"
+  maxContextTokens: 200000
+  onContextExhaustion: restart
+  dispatchable: true
+  scaling:
+    minInstances: 0
+    maxInstances: 5
+    startPolicy: OnDemand
+    cooldownSeconds: 300
+---
+# Reviewer Agent: code review
+apiVersion: karo.dev/v1alpha1
+kind: AgentSpec
+metadata:
+  name: reviewer-agent
+  namespace: dev-team
+  labels:
+    team: dev
+    role: evaluator
+spec:
+  modelConfigRef:
+    name: claude-sonnet
+  systemPrompt:
+    configMapRef:
+      name: reviewer-agent-prompt
+      key: prompt.txt
+  capabilities:
+    - name: review
+      skillPrompt:
+        inline: |
+          Review the submitted code changes:
+          1. Check for correctness, security, and performance
+          2. Verify test coverage
+          3. Ensure acceptance criteria are met
+          4. Provide line-level feedback
+      requiredTools:
+        - github
+  memoryRef:
+    name: dev-team-memory
+  toolSetRef:
+    name: dev-tools
+  runtime:
+    image: ghcr.io/karo-dev/karo-claude-code-harness:latest
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "1Gi"
+      limits:
+        cpu: "2"
+        memory: "4Gi"
+  maxContextTokens: 200000
+  onContextExhaustion: checkpoint
+  dispatchable: true
+  scaling:
+    minInstances: 0
+    maxInstances: 3
+    startPolicy: OnDemand
+    cooldownSeconds: 300
+---
+# Test Agent: testing and validation
+apiVersion: karo.dev/v1alpha1
+kind: AgentSpec
+metadata:
+  name: test-agent
+  namespace: dev-team
+  labels:
+    team: dev
+    role: evaluator
+spec:
+  modelConfigRef:
+    name: claude-sonnet
+  systemPrompt:
+    configMapRef:
+      name: test-agent-prompt
+      key: prompt.txt
+  capabilities:
+    - name: eval
+      skillPrompt:
+        inline: |
+          Write and run tests for the submitted implementation:
+          1. Create unit tests for all new functions
+          2. Create integration tests for API endpoints
+          3. Run the full test suite
+          4. Report coverage metrics
+      requiredTools:
+        - code-executor
+  memoryRef:
+    name: dev-team-memory
+  toolSetRef:
+    name: dev-tools
+  sandboxClassRef:
+    name: dev-sandbox
+  runtime:
+    image: ghcr.io/karo-dev/karo-goose-harness:latest
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "1Gi"
+      limits:
+        cpu: "2"
+        memory: "4Gi"
+  maxContextTokens: 200000
+  onContextExhaustion: restart
+  dispatchable: true
+  scaling:
+    minInstances: 0
+    maxInstances: 3
+    startPolicy: OnDemand
+    cooldownSeconds: 300

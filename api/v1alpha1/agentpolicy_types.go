@@ -4,6 +4,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// +kubebuilder:validation:XValidation:rule="!has(self.loop) || self.loop.requireHumanApprovalAfterIterations <= self.loop.maxIterationsPerRun || self.loop.maxIterationsPerRun == 0",message="requireHumanApprovalAfterIterations must not exceed maxIterationsPerRun"
 type AgentPolicySpec struct {
 	TargetSelector     metav1.LabelSelector    `json:"targetSelector"`
 	Models             ModelConstraints         `json:"models,omitempty"`
@@ -18,18 +19,24 @@ type AgentPolicySpec struct {
 type ModelConstraints struct {
 	AllowedProviders        []string `json:"allowedProviders,omitempty"`
 	DeniedModels            []string `json:"deniedModels,omitempty"`
+	// +kubebuilder:validation:Minimum=0
 	RequireMinContextWindow int64    `json:"requireMinContextWindow,omitempty"`
 }
 
 type ToolCallGovernance struct {
+	// +kubebuilder:validation:Minimum=0
 	MaxPerMinute             int32 `json:"maxPerMinute,omitempty"`
+	// +kubebuilder:validation:Minimum=0
 	MaxPerLoop               int32 `json:"maxPerLoop,omitempty"`
 	RequireSandboxForExecute bool  `json:"requireSandboxForExecute,omitempty"`
 }
 
 type LoopGovernance struct {
+	// +kubebuilder:validation:Minimum=0
 	MaxIterationsPerRun                 int32 `json:"maxIterationsPerRun,omitempty"`
+	// +kubebuilder:validation:Minimum=0
 	MaxRunDurationMinutes               int32 `json:"maxRunDurationMinutes,omitempty"`
+	// +kubebuilder:validation:Minimum=0
 	RequireHumanApprovalAfterIterations int32 `json:"requireHumanApprovalAfterIterations,omitempty"`
 }
 
@@ -42,12 +49,15 @@ type TaskGraphMutationPolicy struct {
 
 type AuditConfig struct {
 	Enabled        bool                 `json:"enabled"`
+	// +kubebuilder:validation:Enum=Full;Summary;None
 	LogLevel       string               `json:"logLevel"`
 	LogDestination LogDestinationConfig `json:"logDestination,omitempty"`
+	// +kubebuilder:validation:Minimum=0
 	RetentionDays  int32                `json:"retentionDays,omitempty"`
 }
 
 type LogDestinationConfig struct {
+	// +kubebuilder:validation:Enum=stdout;loki;s3
 	Type string `json:"type"`
 }
 
@@ -57,6 +67,7 @@ type DataClassificationConfig struct {
 }
 
 type EscalationConfig struct {
+	// +kubebuilder:validation:Enum=Block;Warn;Audit
 	OnPolicyViolation string `json:"onPolicyViolation"`
 	NotifyWebhook     string `json:"notifyWebhook,omitempty"`
 }

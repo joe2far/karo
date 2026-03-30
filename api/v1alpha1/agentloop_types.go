@@ -7,29 +7,41 @@ import (
 
 type AgentLoopSpec struct {
 	AgentSpecRef      corev1.LocalObjectReference `json:"agentSpecRef"`
+	// +kubebuilder:validation:MinItems=1
 	Triggers          []LoopTrigger               `json:"triggers"`
 	ContextCarryover  bool                        `json:"contextCarryover,omitempty"`
 	LoopPrompt        *SystemPromptConfig         `json:"loopPrompt,omitempty"`
+	// +kubebuilder:validation:Minimum=0
 	MaxConcurrent     int32                       `json:"maxConcurrent,omitempty"`
+	// +kubebuilder:validation:Enum=Allow;Forbid;Replace
 	ConcurrencyPolicy string                      `json:"concurrencyPolicy,omitempty"`
 	DispatcherRef     corev1.LocalObjectReference `json:"dispatcherRef"`
 	EvalGate          *LoopEvalGate               `json:"evalGate,omitempty"`
 }
 
+// +kubebuilder:validation:XValidation:rule="self.type != 'cron' || self.schedule != ''",message="schedule required for cron triggers"
+// +kubebuilder:validation:XValidation:rule="self.type != 'event' || has(self.source)",message="source required for event triggers"
 type LoopTrigger struct {
+	// +kubebuilder:validation:Enum=cron;event;webhook
 	Type     string       `json:"type"`
 	Schedule string       `json:"schedule,omitempty"`
 	Source   *EventSource `json:"source,omitempty"`
 }
 
 type EventSource struct {
+	// +kubebuilder:validation:MinLength=1
 	Kind  string `json:"kind"`
+	// +kubebuilder:validation:MinLength=1
 	Name  string `json:"name"`
+	// +kubebuilder:validation:MinLength=1
 	Event string `json:"event"`
 }
 
+// +kubebuilder:validation:XValidation:rule="self.minPassRate >= 0.0 && self.minPassRate <= 1.0",message="minPassRate must be between 0.0 and 1.0"
 type LoopEvalGate struct {
 	EvalSuiteRef corev1.LocalObjectReference `json:"evalSuiteRef"`
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=1
 	MinPassRate  float64                     `json:"minPassRate"`
 }
 

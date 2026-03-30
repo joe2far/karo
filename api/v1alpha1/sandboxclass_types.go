@@ -5,7 +5,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// +kubebuilder:validation:XValidation:rule="!(self.securityContext.runAsNonRoot && has(self.securityContext.runAsUser) && self.securityContext.runAsUser == 0)",message="runAsUser cannot be 0 when runAsNonRoot is true"
 type SandboxClassSpec struct {
+	// +kubebuilder:validation:MinLength=1
 	RuntimeClassName string                `json:"runtimeClassName"`
 	NetworkPolicy    SandboxNetworkPolicy  `json:"networkPolicy,omitempty"`
 	Filesystem       FilesystemConfig      `json:"filesystem,omitempty"`
@@ -14,6 +16,7 @@ type SandboxClassSpec struct {
 }
 
 type SandboxNetworkPolicy struct {
+	// +kubebuilder:validation:Enum=restricted;open;none
 	Egress         string   `json:"egress"`
 	AllowedDomains []string `json:"allowedDomains,omitempty"`
 	AllowedCIDRs   []string `json:"allowedCIDRs,omitempty"`
@@ -26,6 +29,7 @@ type FilesystemConfig struct {
 
 type SecurityContextConfig struct {
 	RunAsNonRoot             bool                   `json:"runAsNonRoot,omitempty"`
+	// +kubebuilder:validation:Minimum=0
 	RunAsUser                *int64                 `json:"runAsUser,omitempty"`
 	AllowPrivilegeEscalation bool                   `json:"allowPrivilegeEscalation,omitempty"`
 	SeccompProfile           *corev1.SeccompProfile `json:"seccompProfile,omitempty"`

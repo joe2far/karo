@@ -5,8 +5,14 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// +kubebuilder:validation:XValidation:rule="self.provider in ['anthropic','openai','bedrock','vertex']",message="provider must be one of: anthropic, openai, bedrock, vertex"
+// +kubebuilder:validation:XValidation:rule="self.provider != 'bedrock' || has(self.bedrock)",message="bedrock config is required when provider is bedrock"
+// +kubebuilder:validation:XValidation:rule="self.provider != 'vertex' || has(self.vertex)",message="vertex config is required when provider is vertex"
+// +kubebuilder:validation:XValidation:rule="self.provider in ['bedrock','vertex'] || has(self.apiKeySecret)",message="apiKeySecret is required for anthropic and openai providers"
 type ModelConfigSpec struct {
+	// +kubebuilder:validation:MinLength=1
 	Provider     string                    `json:"provider"`
+	// +kubebuilder:validation:MinLength=1
 	Name         string                    `json:"name"`
 	APIKeySecret *corev1.SecretKeySelector `json:"apiKeySecret,omitempty"`
 	Endpoint     string                    `json:"endpoint,omitempty"`
@@ -17,27 +23,35 @@ type ModelConfigSpec struct {
 }
 
 type BedrockConfig struct {
+	// +kubebuilder:validation:MinLength=1
 	Region           string `json:"region"`
+	// +kubebuilder:validation:MinLength=1
 	IRSARoleArn      string `json:"irsaRoleArn"`
 	EndpointOverride string `json:"endpointOverride,omitempty"`
 }
 
 type VertexConfig struct {
+	// +kubebuilder:validation:MinLength=1
 	Project           string `json:"project"`
+	// +kubebuilder:validation:MinLength=1
 	Location          string `json:"location"`
 	GCPServiceAccount string `json:"gcpServiceAccount"`
 	EndpointOverride  string `json:"endpointOverride,omitempty"`
 }
 
 type ModelParameters struct {
+	// +kubebuilder:validation:Minimum=1
 	MaxTokens   int32   `json:"maxTokens,omitempty"`
 	Temperature float64 `json:"temperature,omitempty"`
 	TopP        float64 `json:"topP,omitempty"`
 }
 
 type ModelRateLimit struct {
+	// +kubebuilder:validation:Minimum=0
 	RequestsPerMinute int32 `json:"requestsPerMinute,omitempty"`
+	// +kubebuilder:validation:Minimum=0
 	TokensPerMinute   int64 `json:"tokensPerMinute,omitempty"`
+	// +kubebuilder:validation:Minimum=0
 	TokensPerDay      int64 `json:"tokensPerDay,omitempty"`
 }
 

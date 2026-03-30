@@ -1,0 +1,165 @@
+---
+# TaskGraph: OAuth2 authentication feature
+apiVersion: karo.dev/v1alpha1
+kind: TaskGraph
+metadata:
+  name: feature-auth
+  namespace: dev-team
+  labels:
+    team: dev
+    feature: auth
+spec:
+  description: "Implement OAuth2 authentication flow with JWT tokens"
+
+  ownerAgentRef:
+    name: planner-agent
+
+  dispatcherRef:
+    name: dev-router
+
+  tasks:
+    - id: design-api
+      title: "Design OAuth2 API contract"
+      type: design
+      description: |
+        Define the OpenAPI spec for the authentication endpoints:
+        - POST /auth/login (email + password → JWT)
+        - POST /auth/register (create account)
+        - POST /auth/refresh (refresh token → new JWT)
+        - POST /auth/logout (revoke token)
+        - GET /auth/me (get current user profile)
+        Include request/response schemas, error codes, and rate limiting headers.
+      deps: []
+      priority: High
+      addedBy: planner-agent
+      addedAt: "2026-03-30T09:00:00Z"
+      timeoutMinutes: 120
+      acceptanceCriteria:
+        - "OpenAPI spec committed to repo at docs/api/auth.yaml"
+        - "Auth flow sequence diagram included"
+        - "Error response format documented"
+
+    - id: design-schema
+      title: "Design user and session DB schema"
+      type: design
+      description: |
+        Design the database schema for:
+        - Users table (id, email, password_hash, created_at, updated_at)
+        - Sessions table (id, user_id, refresh_token, expires_at, revoked)
+        Create migration files using the project's migration tool.
+      deps: [design-api]
+      priority: High
+      addedBy: planner-agent
+      addedAt: "2026-03-30T09:00:00Z"
+      timeoutMinutes: 120
+      acceptanceCriteria:
+        - "Migration files created and tested"
+        - "Schema supports soft delete"
+        - "Indexes defined for common queries"
+
+    - id: impl-auth
+      title: "Implement authentication endpoints"
+      type: impl
+      description: |
+        Implement all auth endpoints from the API contract:
+        - Password hashing with bcrypt
+        - JWT token generation and validation
+        - Refresh token rotation
+        - Rate limiting on login endpoint
+        Write unit tests for each endpoint.
+      deps: [design-api, design-schema]
+      priority: High
+      addedBy: planner-agent
+      addedAt: "2026-03-30T09:00:00Z"
+      timeoutMinutes: 240
+      acceptanceCriteria:
+        - "All endpoints return correct HTTP status codes"
+        - "JWT tokens include correct claims"
+        - "Password hashing uses bcrypt with cost >= 10"
+        - "Unit tests passing with 90%+ coverage"
+      evalGate:
+        evalSuiteRef:
+          name: dev-evals
+        minPassRate: 0.90
+        onFail: Reopen
+
+    - id: impl-middleware
+      title: "Implement auth middleware"
+      type: impl
+      description: |
+        Create authentication middleware that:
+        - Extracts JWT from Authorization header
+        - Validates token signature and expiry
+        - Attaches user context to request
+        - Returns 401 for invalid/missing tokens
+        - Supports route-level permission checking
+      deps: [impl-auth]
+      priority: Medium
+      addedBy: planner-agent
+      addedAt: "2026-03-30T09:00:00Z"
+      timeoutMinutes: 180
+      acceptanceCriteria:
+        - "Middleware correctly validates JWT tokens"
+        - "401 returned for invalid tokens"
+        - "User context attached to authenticated requests"
+      evalGate:
+        evalSuiteRef:
+          name: dev-evals
+        minPassRate: 0.90
+        onFail: Reopen
+
+    - id: test-integration
+      title: "Write and run integration test suite"
+      type: eval
+      description: |
+        Create an integration test suite that tests the full auth flow:
+        - Register → Login → Access protected route → Refresh → Logout
+        - Invalid credentials handling
+        - Token expiry handling
+        - Concurrent session handling
+      deps: [impl-auth, impl-middleware]
+      priority: High
+      addedBy: planner-agent
+      addedAt: "2026-03-30T09:00:00Z"
+      timeoutMinutes: 120
+      acceptanceCriteria:
+        - "All integration tests pass"
+        - "95%+ test coverage on auth package"
+        - "Edge cases covered (expired tokens, malformed input, etc.)"
+
+    - id: review-auth
+      title: "Security review of auth implementation"
+      type: review
+      description: |
+        Perform a security-focused code review:
+        - Check for SQL injection vulnerabilities
+        - Verify password handling (no plaintext storage/logging)
+        - Review JWT configuration (algorithm, expiry, claims)
+        - Check for timing attacks on authentication
+        - Verify rate limiting implementation
+      deps: [impl-auth, impl-middleware, test-integration]
+      priority: High
+      addedBy: planner-agent
+      addedAt: "2026-03-30T09:00:00Z"
+      timeoutMinutes: 120
+      acceptanceCriteria:
+        - "No critical or high-severity security issues"
+        - "All findings documented with remediation guidance"
+
+    - id: approval-merge
+      title: "Human approval to merge to main"
+      type: approval
+      description: "Request human approval to merge the auth feature branch to main"
+      deps: [review-auth]
+      priority: High
+      addedBy: planner-agent
+      addedAt: "2026-03-30T09:00:00Z"
+
+  dispatchPolicy:
+    maxConcurrent: 3
+    defaultTimeoutMinutes: 120
+    retryPolicy:
+      maxRetries: 2
+      backoffSeconds: 60
+      onExhaustion: EscalateToHuman
+    allowAgentMutation: true

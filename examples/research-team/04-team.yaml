@@ -1,0 +1,70 @@
+---
+# Agent Team: research team binding
+apiVersion: karo.dev/v1alpha1
+kind: AgentTeam
+metadata:
+  name: research-team
+  namespace: research-team
+spec:
+  description: "Research team for literature review, data analysis, and synthesis"
+
+  agents:
+    - agentSpecRef:
+        name: research-lead
+      role: orchestrator
+    - agentSpecRef:
+        name: literature-agent
+      role: executor
+    - agentSpecRef:
+        name: analyst-agent
+      role: executor
+
+  sharedResources:
+    memoryRef:
+      name: research-memory
+    toolSetRef:
+      name: research-tools
+    sandboxClassRef:
+      name: research-sandbox
+    modelConfigRef:
+      name: claude-sonnet
+
+  dispatcherRef:
+    name: research-router
+
+  policyRef:
+    name: research-policy
+---
+# Dispatcher: routes research tasks
+apiVersion: karo.dev/v1alpha1
+kind: Dispatcher
+metadata:
+  name: research-router
+  namespace: research-team
+spec:
+  mode: capability
+
+  taskGraphSelector:
+    matchLabels:
+      team: research
+
+  capabilityRoutes:
+    - capability: design
+      agentSpecRef:
+        name: research-lead
+    - capability: impl
+      agentSpecRef:
+        name: literature-agent
+    - capability: eval
+      agentSpecRef:
+        name: analyst-agent
+    - capability: review
+      agentSpecRef:
+        name: research-lead
+
+  fallbackAgentSpecRef:
+    name: research-lead
+
+  messaging:
+    type: mailbox
+    mailboxPattern: "{agentSpec}-mailbox"

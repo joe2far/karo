@@ -1,0 +1,79 @@
+---
+# AgentLoop: daily standup trigger
+apiVersion: karo.dev/v1alpha1
+kind: AgentLoop
+metadata:
+  name: daily-standup
+  namespace: dev-team
+spec:
+  agentSpecRef:
+    name: planner-agent
+
+  triggers:
+    - type: cron
+      schedule: "0 9 * * 1-5"   # 9am weekdays
+    - type: event
+      source:
+        kind: TaskGraph
+        name: "*"
+        event: TaskFailed        # trigger on task failure for replanning
+
+  dispatcherRef:
+    name: dev-router
+
+  contextCarryover: true
+
+  evalGate:
+    evalSuiteRef:
+      name: dev-evals
+    minPassRate: 0.80
+---
+# AgentChannel: Slack integration for human-in-the-loop
+apiVersion: karo.dev/v1alpha1
+kind: AgentChannel
+metadata:
+  name: dev-slack
+  namespace: dev-team
+spec:
+  platform:
+    type: slack
+    slack:
+      appCredentialSecret:
+        name: slack-app-credentials
+        key: BOT_TOKEN
+      signingSecret:
+        name: slack-signing-secret
+        key: SIGNING_SECRET
+      channelId: "C0DEV-TEAM"
+
+  inbound:
+    defaultTeamRef:
+      name: dev-team
+    mode: task-creation
+    taskGraphTemplate:
+      ownerAgentRef:
+        name: planner-agent
+      dispatcherRef:
+        name: dev-router
+      initialTaskType: design
+
+  outbound:
+    notifyOn:
+      - taskGraphCompleted
+      - taskFailed
+      - approvalRequired
+    format: summary
+
+  approvals:
+    enabled: true
+    style: interactive
+    timeoutMinutes: 1440          # 24h for human approval
+    onTimeout: Escalate
+
+  teamHandoff:
+    - fromTeamRef:
+        name: dev-team
+      toTeamRef:
+        name: sre-team
+      trigger: DeploymentReady
+      requireApproval: true

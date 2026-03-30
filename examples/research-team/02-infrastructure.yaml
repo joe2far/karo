@@ -1,0 +1,166 @@
+---
+# ModelConfig: Claude Sonnet for research tasks
+apiVersion: karo.dev/v1alpha1
+kind: ModelConfig
+metadata:
+  name: claude-sonnet
+  namespace: research-team
+spec:
+  provider: anthropic
+  name: claude-sonnet-4-20250514
+  apiKeySecret:
+    name: anthropic-api-key
+    key: ANTHROPIC_API_KEY
+  parameters:
+    maxTokens: 8192
+    temperature: 0.2
+---
+# SandboxClass: open egress for research (web access needed)
+apiVersion: karo.dev/v1alpha1
+kind: SandboxClass
+metadata:
+  name: research-sandbox
+  namespace: research-team
+spec:
+  runtimeClassName: gvisor
+  networkPolicy:
+    egress: open
+  filesystem:
+    readOnlyRootFilesystem: false
+    allowedMounts:
+      - /tmp
+      - /workspace
+  resourceLimits:
+    cpu: "2"
+    memory: "4Gi"
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    allowPrivilegeEscalation: false
+---
+# MemoryStore: research knowledge base
+apiVersion: karo.dev/v1alpha1
+kind: MemoryStore
+metadata:
+  name: research-memory
+  namespace: research-team
+spec:
+  backend:
+    type: mem0
+    mem0:
+      apiKeySecret:
+        name: mem0-api-key
+        key: API_KEY
+      organizationId: "research-org"
+      projectId: "research-team"
+  scope: team
+  retentionDays: 365
+  maxMemories: 50000
+  categories:
+    - papers
+    - findings
+    - hypotheses
+    - data-sources
+    - conclusions
+    - methodology
+---
+# ToolSet: research tools
+apiVersion: karo.dev/v1alpha1
+kind: ToolSet
+metadata:
+  name: research-tools
+  namespace: research-team
+spec:
+  tools:
+    - name: web-search
+      type: mcp
+      transport: sse
+      endpoint: "http://web-search-mcp.research-team.svc:8080"
+      permissions:
+        - search
+      credentialSecret:
+        name: web-search-api-key
+        key: API_KEY
+
+    - name: web-fetch
+      type: mcp
+      transport: sse
+      endpoint: "http://web-fetch-mcp.research-team.svc:8080"
+      permissions:
+        - fetch
+        - extract
+
+    - name: code-executor
+      type: mcp
+      transport: stdio
+      command: ["/usr/local/bin/code-exec-mcp"]
+      permissions:
+        - execute
+      sandboxRequired: true
+---
+# AgentPolicy: research governance
+apiVersion: karo.dev/v1alpha1
+kind: AgentPolicy
+metadata:
+  name: research-policy
+  namespace: research-team
+spec:
+  targetSelector:
+    matchLabels:
+      team: research
+  models:
+    allowedProviders:
+      - anthropic
+  toolCalls:
+    maxPerMinute: 30
+    maxPerLoop: 200
+  loop:
+    maxIterationsPerRun: 50
+    maxRunDurationMinutes: 180
+  taskGraph:
+    allowMutation: true
+    mutationScope:
+      - addTask
+      - closeTask
+    requireAuditTrail: true
+  audit:
+    enabled: true
+    logLevel: Summary
+    logDestination:
+      type: stdout
+  escalation:
+    onPolicyViolation: Warn
+---
+# EvalSuite: research quality gates
+apiVersion: karo.dev/v1alpha1
+kind: EvalSuite
+metadata:
+  name: research-evals
+  namespace: research-team
+spec:
+  agentSpecRef:
+    name: research-lead
+  evalCases:
+    - id: sources-cited
+      description: "Research findings cite sources"
+      assertions:
+        - type: contains
+          value: "Source:"
+        - type: llm-judge
+          criteria: "The research output cites specific sources for all major claims and findings"
+          judgeModelConfigRef:
+            name: claude-sonnet
+    - id: methodology-sound
+      description: "Research methodology is described and sound"
+      assertions:
+        - type: llm-judge
+          criteria: "The research describes its methodology and the approach is appropriate for the research question"
+          judgeModelConfigRef:
+            name: claude-sonnet
+    - id: no-hallucinations
+      description: "No obvious hallucinated facts"
+      assertions:
+        - type: not-contains
+          value: "I believe"
+        - type: not-contains
+          value: "I think"

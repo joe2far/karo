@@ -1,0 +1,76 @@
+---
+# Agent Team: binds all agents with shared resources
+apiVersion: karo.dev/v1alpha1
+kind: AgentTeam
+metadata:
+  name: dev-team
+  namespace: dev-team
+spec:
+  description: "Full-stack development team with planner, coders, reviewer, and test agents"
+
+  agents:
+    - agentSpecRef:
+        name: planner-agent
+      role: orchestrator
+    - agentSpecRef:
+        name: coder-agent
+      role: executor
+    - agentSpecRef:
+        name: reviewer-agent
+      role: evaluator
+    - agentSpecRef:
+        name: test-agent
+      role: evaluator
+
+  sharedResources:
+    memoryRef:
+      name: dev-team-memory
+    toolSetRef:
+      name: dev-tools
+    sandboxClassRef:
+      name: dev-sandbox
+    modelConfigRef:
+      name: claude-sonnet
+
+  dispatcherRef:
+    name: dev-router
+
+  policyRef:
+    name: dev-policy
+
+  loopRef:
+    name: daily-standup
+---
+# Dispatcher: routes tasks by capability
+apiVersion: karo.dev/v1alpha1
+kind: Dispatcher
+metadata:
+  name: dev-router
+  namespace: dev-team
+spec:
+  mode: capability
+
+  taskGraphSelector:
+    matchLabels:
+      team: dev
+
+  capabilityRoutes:
+    - capability: design
+      agentSpecRef:
+        name: planner-agent
+    - capability: impl
+      agentSpecRef:
+        name: coder-agent
+    - capability: eval
+      agentSpecRef:
+        name: test-agent
+    - capability: review
+      agentSpecRef:
+        name: reviewer-agent
+
+  fallbackAgentSpecRef:
+    name: planner-agent
+
+  messaging:
+    type: mailbox
+    mailboxPattern: "{agentSpec}-mailbox"

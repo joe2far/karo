@@ -1,0 +1,213 @@
+---
+# ModelConfig: Anthropic Claude Sonnet for all agents
+apiVersion: karo.dev/v1alpha1
+kind: ModelConfig
+metadata:
+  name: claude-sonnet
+  namespace: dev-team
+spec:
+  provider: anthropic
+  name: claude-sonnet-4-20250514
+  apiKeySecret:
+    name: anthropic-api-key
+    key: ANTHROPIC_API_KEY
+  parameters:
+    maxTokens: 8192
+    temperature: 0.3
+---
+# SandboxClass: gVisor isolation with restricted egress
+apiVersion: karo.dev/v1alpha1
+kind: SandboxClass
+metadata:
+  name: dev-sandbox
+  namespace: dev-team
+spec:
+  runtimeClassName: gvisor
+  networkPolicy:
+    egress: restricted
+    allowedDomains:
+      - "api.github.com"
+      - "github.com"
+      - "pypi.org"
+      - "registry.npmjs.org"
+      - "go.dev"
+      - "proxy.golang.org"
+    allowedCIDRs: []
+  filesystem:
+    readOnlyRootFilesystem: false
+    allowedMounts:
+      - /tmp
+      - /workspace
+  resourceLimits:
+    cpu: "2"
+    memory: "4Gi"
+    ephemeral-storage: "10Gi"
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    allowPrivilegeEscalation: false
+    seccompProfile:
+      type: RuntimeDefault
+    capabilities:
+      drop:
+        - ALL
+---
+# MemoryStore: shared team memory via mem0
+apiVersion: karo.dev/v1alpha1
+kind: MemoryStore
+metadata:
+  name: dev-team-memory
+  namespace: dev-team
+spec:
+  backend:
+    type: mem0
+    mem0:
+      apiKeySecret:
+        name: mem0-api-key
+        key: API_KEY
+      organizationId: "dev-org"
+      projectId: "dev-team"
+  scope: team
+  retentionDays: 90
+  maxMemories: 10000
+  categories:
+    - architecture-decisions
+    - code-patterns
+    - review-feedback
+    - test-strategies
+    - debugging-notes
+---
+# ToolSet: MCP tools available to all team agents
+apiVersion: karo.dev/v1alpha1
+kind: ToolSet
+metadata:
+  name: dev-tools
+  namespace: dev-team
+spec:
+  tools:
+    - name: github
+      type: mcp
+      transport: streamable-http
+      endpoint: "http://github-mcp-server.dev-team.svc:8080"
+      permissions:
+        - read
+        - write
+        - pull-request
+      credentialSecret:
+        name: github-mcp-credentials
+        key: GITHUB_TOKEN
+
+    - name: code-executor
+      type: mcp
+      transport: stdio
+      command: ["/usr/local/bin/code-exec-mcp"]
+      permissions:
+        - execute
+      sandboxRequired: true
+
+    - name: web-search
+      type: mcp
+      transport: sse
+      endpoint: "http://web-search-mcp.dev-team.svc:8080"
+      permissions:
+        - search
+
+  policyRef:
+    name: dev-policy
+---
+# AgentPolicy: governance rules
+apiVersion: karo.dev/v1alpha1
+kind: AgentPolicy
+metadata:
+  name: dev-policy
+  namespace: dev-team
+spec:
+  targetSelector:
+    matchLabels:
+      team: dev
+
+  models:
+    allowedProviders:
+      - anthropic
+    deniedModels: []
+    requireMinContextWindow: 100000
+
+  toolCalls:
+    maxPerMinute: 60
+    maxPerLoop: 500
+    requireSandboxForExecute: true
+
+  loop:
+    maxIterationsPerRun: 100
+    maxRunDurationMinutes: 120
+    requireHumanApprovalAfterIterations: 50
+
+  taskGraph:
+    allowMutation: true
+    mutationScope:
+      - addTask
+      - closeTask
+      - addDependency
+    denyMutation:
+      - deleteTask
+      - modifyOtherAgentTask
+    requireAuditTrail: true
+
+  audit:
+    enabled: true
+    logLevel: Full
+    logDestination:
+      type: stdout
+    retentionDays: 365
+
+  dataClassification:
+    allowedLevels:
+      - internal
+      - confidential
+    denyPatterns:
+      - ".*api[_-]?key.*"
+      - ".*password.*"
+      - ".*secret.*"
+
+  escalation:
+    onPolicyViolation: Block
+---
+# EvalSuite: quality gates for code tasks
+apiVersion: karo.dev/v1alpha1
+kind: EvalSuite
+metadata:
+  name: dev-evals
+  namespace: dev-team
+spec:
+  agentSpecRef:
+    name: coder-agent
+  evalCases:
+    - id: code-compiles
+      description: "Submitted code compiles without errors"
+      assertions:
+        - type: not-contains
+          value: "compilation error"
+        - type: not-contains
+          value: "syntax error"
+
+    - id: tests-pass
+      description: "Unit tests pass"
+      assertions:
+        - type: contains
+          value: "PASS"
+        - type: not-contains
+          value: "FAIL"
+
+    - id: no-secrets
+      description: "Output does not contain credentials"
+      assertions:
+        - type: not-matches-pattern
+          pattern: "(?i)(api.?key|password|secret|token)\\s*[:=]\\s*\\S+"
+
+    - id: acceptance-met
+      description: "Acceptance criteria are met"
+      assertions:
+        - type: llm-judge
+          criteria: "All acceptance criteria listed in the task are demonstrably met by the submitted output"
+          judgeModelConfigRef:
+            name: claude-sonnet
