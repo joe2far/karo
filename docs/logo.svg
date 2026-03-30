@@ -6,9 +6,9 @@
     </linearGradient>
   </defs>
 
-  <!-- "KARO" wordmark -->
-  <text x="160" y="78" text-anchor="middle" font-family="'SF Mono', 'Fira Code', 'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace" font-size="80" font-weight="700" letter-spacing="-2" fill="url(#grad)">KARO</text>
+  <!-- "karo" wordmark -->
+  <text x="160" y="78" text-anchor="middle" font-family="'SF Mono', 'Fira Code', 'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace" font-size="80" font-weight="700" letter-spacing="-2" fill="url(#grad)">karo</text>
 
   <!-- Tagline -->
-  <text x="160" y="100" text-anchor="middle" font-family="'Inter', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="9" font-weight="400" letter-spacing="3" fill="#94a3b8">KUBERNETES AGENT RUNTIME ORCHESTRATOR</text>
+  <text x="160" y="100" text-anchor="middle" font-family="'Inter', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="9" font-weight="400" letter-spacing="3" fill="#94a3b8">Kubernetes Agent Runtime Orchestrator</text>
 </svg>
