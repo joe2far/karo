@@ -14,6 +14,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	karov1alpha1 "github.com/joe2far/karo/api/v1alpha1"
+	"github.com/joe2far/karo/internal/policy"
 )
 
 const agentPolicyFinalizer = "karo.dev/agentpolicy-finalizer"
@@ -22,12 +23,14 @@ const agentPolicyFinalizer = "karo.dev/agentpolicy-finalizer"
 // +kubebuilder:rbac:groups=karo.dev,resources=agentpolicies/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=karo.dev,resources=agentpolicies/finalizers,verbs=update
 // +kubebuilder:rbac:groups=karo.dev,resources=agentspecs,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
 type AgentPolicyReconciler struct {
 	client.Client
-	Scheme   *runtime.Scheme
-	Recorder record.EventRecorder
+	Scheme         *runtime.Scheme
+	Recorder       record.EventRecorder
+	PolicyCompiler *policy.PolicyCompiler
 }
 
 func (r *AgentPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -57,7 +60,7 @@ func (r *AgentPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		}
 	}
 
-	// Validate targetSelector by converting it.
+	// Validate targetSelector.
 	selector, err := metav1.LabelSelectorAsSelector(&agentPolicy.Spec.TargetSelector)
 	if err != nil {
 		agentPolicy.Status.Phase = "Error"
@@ -70,46 +73,48 @@ func (r *AgentPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			Message:            fmt.Sprintf("Invalid targetSelector: %v", err),
 		})
 		if statusErr := r.Status().Update(ctx, &agentPolicy); statusErr != nil {
-			logger.Error(statusErr, "unable to update AgentPolicy status")
 			return ctrl.Result{}, statusErr
 		}
-		r.Recorder.Event(&agentPolicy, "Warning", "InvalidSelector", fmt.Sprintf("Invalid targetSelector: %v", err))
 		return ctrl.Result{}, nil
 	}
 
-	// Count matching AgentSpecs to report scope.
+	// Find and count matching AgentSpecs.
 	var agentSpecs karov1alpha1.AgentSpecList
-	if err := r.List(ctx, &agentSpecs, &client.ListOptions{
-		Namespace: agentPolicy.Namespace,
-	}); err != nil {
+	if err := r.List(ctx, &agentSpecs, client.InNamespace(agentPolicy.Namespace)); err != nil {
 		logger.Error(err, "failed to list AgentSpecs for policy scope")
 	}
 
 	var matchingAgents int32
-	for _, spec := range agentSpecs.Items {
-		if selector.Matches(labels.Set(spec.Labels)) {
-			matchingAgents++
+	var compiledCount int32
+	for i := range agentSpecs.Items {
+		spec := &agentSpecs.Items[i]
+		if !selector.Matches(labels.Set(spec.Labels)) {
+			continue
+		}
+		matchingAgents++
+
+		// Compile and publish the policy ConfigMap for each matching AgentSpec.
+		if r.PolicyCompiler != nil {
+			if err := r.PolicyCompiler.CompileAndPublish(ctx, spec); err != nil {
+				logger.Error(err, "failed to compile policy for agent", "agentSpec", spec.Name)
+				r.Recorder.Eventf(&agentPolicy, "Warning", "CompileFailed",
+					"Failed to compile policy for AgentSpec %s: %v", spec.Name, err)
+			} else {
+				compiledCount++
+			}
 		}
 	}
 
 	// Validate policy rules.
 	var warnings []string
 
-	// Validate model constraints.
-	if len(agentPolicy.Spec.Models.AllowedProviders) == 0 && len(agentPolicy.Spec.Models.DeniedModels) == 0 {
-		// No model constraints — that's fine, just informational.
-	}
-
-	// Validate loop governance bounds.
 	if agentPolicy.Spec.Loop.MaxIterationsPerRun > 0 &&
 		agentPolicy.Spec.Loop.RequireHumanApprovalAfterIterations > agentPolicy.Spec.Loop.MaxIterationsPerRun {
 		warnings = append(warnings, "requireHumanApprovalAfterIterations exceeds maxIterationsPerRun")
 	}
 
-	// Validate escalation policy.
 	switch agentPolicy.Spec.Escalation.OnPolicyViolation {
 	case "Block", "Warn", "Audit", "":
-		// Valid values.
 	default:
 		warnings = append(warnings, fmt.Sprintf("unknown escalation policy: %s", agentPolicy.Spec.Escalation.OnPolicyViolation))
 	}
@@ -125,7 +130,7 @@ func (r *AgentPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		ObservedGeneration: agentPolicy.Generation,
 		LastTransitionTime: metav1.Now(),
 		Reason:             "PolicyActive",
-		Message:            fmt.Sprintf("AgentPolicy is active, targeting %d agents", matchingAgents),
+		Message:            fmt.Sprintf("AgentPolicy is active, targeting %d agents (%d policy ConfigMaps published)", matchingAgents, compiledCount),
 	})
 
 	if len(warnings) > 0 {

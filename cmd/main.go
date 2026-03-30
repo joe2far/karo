@@ -33,7 +33,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	karov1alpha1 "github.com/joe2far/karo/api/v1alpha1"
+	"github.com/joe2far/karo/internal/channel"
 	"github.com/joe2far/karo/internal/controller"
+	"github.com/joe2far/karo/internal/network"
+	"github.com/joe2far/karo/internal/policy"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -94,10 +97,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	policyManager := network.NewPolicyManager(mgr.GetClient())
+
 	if err = (&controller.SandboxClassReconciler{
-		Client:   mgr.GetClient(),
-		Scheme:   mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorderFor("sandboxclass-controller"),
+		Client:        mgr.GetClient(),
+		Scheme:        mgr.GetScheme(),
+		Recorder:      mgr.GetEventRecorderFor("sandboxclass-controller"),
+		PolicyManager: policyManager,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "SandboxClass")
 		os.Exit(1)
@@ -126,10 +132,13 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "ToolSet")
 		os.Exit(1)
 	}
+	policyCompiler := policy.NewPolicyCompiler(mgr.GetClient())
+
 	if err = (&controller.AgentPolicyReconciler{
-		Client:   mgr.GetClient(),
-		Scheme:   mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorderFor("agentpolicy-controller"),
+		Client:         mgr.GetClient(),
+		Scheme:         mgr.GetScheme(),
+		Recorder:       mgr.GetEventRecorderFor("agentpolicy-controller"),
+		PolicyCompiler: policyCompiler,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "AgentPolicy")
 		os.Exit(1)
@@ -198,10 +207,13 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "AgentLoop")
 		os.Exit(1)
 	}
+	gatewayManager := channel.NewGatewayManager(mgr.GetClient())
+
 	if err = (&controller.AgentChannelReconciler{
-		Client:   mgr.GetClient(),
-		Scheme:   mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorderFor("agentchannel-controller"),
+		Client:         mgr.GetClient(),
+		Scheme:         mgr.GetScheme(),
+		Recorder:       mgr.GetEventRecorderFor("agentchannel-controller"),
+		GatewayManager: gatewayManager,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "AgentChannel")
 		os.Exit(1)

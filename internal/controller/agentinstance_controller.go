@@ -18,6 +18,7 @@ import (
 
 	karov1alpha1 "github.com/joe2far/karo/api/v1alpha1"
 	gitinjector "github.com/joe2far/karo/internal/git"
+	"github.com/joe2far/karo/internal/policy"
 )
 
 // +kubebuilder:rbac:groups=karo.dev,resources=agentinstances,verbs=get;list;watch;create;update;patch;delete
@@ -406,6 +407,27 @@ func (r *AgentInstanceReconciler) buildPod(instance *karov1alpha1.AgentInstance,
 		})
 	}
 
+	// Mount the policy ConfigMap if it exists.
+	policyConfigMapName := policy.GetPolicyConfigMapName(agentSpec.Name)
+	volumes = append(volumes, corev1.Volume{
+		Name: "karo-policy",
+		VolumeSource: corev1.VolumeSource{
+			ConfigMap: &corev1.ConfigMapVolumeSource{
+				LocalObjectReference: corev1.LocalObjectReference{Name: policyConfigMapName},
+				Optional:             boolPtrTrue(),
+			},
+		},
+	})
+	mainContainer.VolumeMounts = append(mainContainer.VolumeMounts, corev1.VolumeMount{
+		Name: "karo-policy", MountPath: "/etc/karo/policy", ReadOnly: true,
+	})
+	sidecar.VolumeMounts = append(sidecar.VolumeMounts, corev1.VolumeMount{
+		Name: "karo-policy", MountPath: "/etc/karo/policy", ReadOnly: true,
+	})
+	sidecar.Env = append(sidecar.Env, corev1.EnvVar{
+		Name: "KARO_POLICY_PATH", Value: "/etc/karo/policy/policy.json",
+	})
+
 	// Mount agentConfigFiles from ConfigMaps.
 	for _, acf := range agentSpec.Spec.AgentConfigFiles {
 		if acf.Source.ConfigMapRef != nil {
@@ -459,6 +481,8 @@ func (r *AgentInstanceReconciler) updatePhaseFromPod(instance *karov1alpha1.Agen
 		instance.Status.Phase = karov1alpha1.AgentInstancePhasePending
 	}
 }
+
+func boolPtrTrue() *bool { t := true; return &t }
 
 func (r *AgentInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
