@@ -1,0 +1,79 @@
+---
+# Agent Team: SRE team binding
+apiVersion: karo.dev/v1alpha1
+kind: AgentTeam
+metadata:
+  name: sre-team
+  namespace: sre-team
+spec:
+  description: "SRE team for incident response, RCA, capacity planning, and remediation"
+
+  agents:
+    - agentSpecRef:
+        name: incident-commander
+      role: orchestrator
+    - agentSpecRef:
+        name: diagnostics-agent
+      role: executor
+    - agentSpecRef:
+        name: capacity-planner
+      role: executor
+    - agentSpecRef:
+        name: remediation-agent
+      role: executor
+
+  sharedResources:
+    memoryRef:
+      name: sre-memory
+    toolSetRef:
+      name: sre-tools
+    sandboxClassRef:
+      name: sre-sandbox
+    modelConfigRef:
+      name: claude-sonnet
+
+  dispatcherRef:
+    name: sre-router
+
+  policyRef:
+    name: sre-policy
+
+  loopRef:
+    name: capacity-review
+---
+# Dispatcher: routes SRE tasks
+apiVersion: karo.dev/v1alpha1
+kind: Dispatcher
+metadata:
+  name: sre-router
+  namespace: sre-team
+spec:
+  mode: capability
+
+  taskGraphSelector:
+    matchLabels:
+      team: sre
+
+  capabilityRoutes:
+    - capability: design
+      agentSpecRef:
+        name: incident-commander
+    - capability: impl
+      agentSpecRef:
+        name: diagnostics-agent
+    - capability: eval
+      agentSpecRef:
+        name: diagnostics-agent
+    - capability: review
+      agentSpecRef:
+        name: incident-commander
+    - capability: infra
+      agentSpecRef:
+        name: remediation-agent
+
+  fallbackAgentSpecRef:
+    name: incident-commander
+
+  messaging:
+    type: mailbox
+    mailboxPattern: "{agentSpec}-mailbox"

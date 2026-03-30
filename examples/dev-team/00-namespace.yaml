@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dev-team
+  labels:
+    team: dev
+    karo.dev/managed: "true"

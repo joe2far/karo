@@ -1,0 +1,207 @@
+---
+# TaskGraph: Root Cause Analysis for a production incident
+apiVersion: karo.dev/v1alpha1
+kind: TaskGraph
+metadata:
+  name: incident-20260330-api-latency
+  namespace: sre-team
+  labels:
+    team: sre
+    type: incident
+    severity: P1
+spec:
+  description: |
+    P1 Incident: API latency spike on payment-service.
+    Impact: 30% of payment requests timing out since 14:00 UTC.
+    Alert: PaymentServiceP99LatencyHigh fired at 14:05 UTC.
+
+  ownerAgentRef:
+    name: incident-commander
+
+  dispatcherRef:
+    name: sre-router
+
+  tasks:
+    - id: triage
+      title: "Initial triage and impact assessment"
+      type: design
+      description: |
+        Perform initial triage of the P1 latency incident:
+        1. Confirm the scope: which endpoints are affected?
+        2. Assess customer impact: error rate, affected users
+        3. Check for recent changes: deployments, config changes, dependency updates
+        4. Create the investigation plan with specific diagnostic queries
+      deps: []
+      priority: High
+      addedBy: incident-commander
+      addedAt: "2026-03-30T14:10:00Z"
+      timeoutMinutes: 30
+      acceptanceCriteria:
+        - "Impact scope documented (which services, endpoints, users)"
+        - "Recent changes identified"
+        - "Investigation plan with specific PromQL and LogQL queries"
+
+    - id: diagnose-metrics
+      title: "Query metrics for anomalies"
+      type: impl
+      description: |
+        Query Prometheus for diagnostic metrics:
+        - payment-service p50/p95/p99 latency (compare to 1h ago, 1d ago)
+        - Error rate by endpoint and status code
+        - Request rate (traffic volume changes)
+        - CPU/memory saturation on payment-service pods
+        - Database connection pool utilization
+        - Downstream dependency latency (auth-service, inventory-service)
+        - Node-level metrics (CPU, memory, disk I/O)
+
+        PromQL queries to start with:
+        - histogram_quantile(0.99, rate(http_request_duration_seconds_bucket{service="payment"}[5m]))
+        - rate(http_requests_total{service="payment",code=~"5.."}[5m])
+        - container_cpu_usage_seconds_total{pod=~"payment-.*"}
+      deps: [triage]
+      priority: High
+      addedBy: incident-commander
+      addedAt: "2026-03-30T14:10:00Z"
+      timeoutMinutes: 60
+      acceptanceCriteria:
+        - "Latency trends with before/during comparison"
+        - "Error rate breakdown by endpoint"
+        - "Resource saturation assessment"
+        - "Downstream dependency health check"
+
+    - id: diagnose-logs
+      title: "Search logs for errors"
+      type: impl
+      description: |
+        Search Loki for error patterns:
+        - payment-service error and warning logs since 13:30 UTC
+        - Database connection errors or timeouts
+        - Downstream service call failures
+        - OOM kills or container restarts
+        - Any stack traces or panics
+
+        LogQL queries:
+        - {namespace="production",app="payment-service"} |= "error" | json
+        - {namespace="production",app="payment-service"} |= "timeout"
+        - {namespace="production",app="payment-service"} |= "connection refused"
+      deps: [triage]
+      priority: High
+      addedBy: incident-commander
+      addedAt: "2026-03-30T14:10:00Z"
+      timeoutMinutes: 60
+      acceptanceCriteria:
+        - "Error log patterns identified and categorized"
+        - "First occurrence timestamp established"
+        - "Error frequency trend documented"
+
+    - id: diagnose-k8s
+      title: "Check Kubernetes events and state"
+      type: impl
+      description: |
+        Inspect Kubernetes cluster state:
+        - Pod events for payment-service (OOMKilled, CrashLoopBackOff, etc.)
+        - Recent deployments or rollouts
+        - HPA scaling events
+        - Node conditions (pressure, not-ready)
+        - PDB violations
+        - Network policy changes
+      deps: [triage]
+      priority: High
+      addedBy: incident-commander
+      addedAt: "2026-03-30T14:10:00Z"
+      timeoutMinutes: 45
+      acceptanceCriteria:
+        - "Pod health status documented"
+        - "Recent cluster events listed"
+        - "Any anomalous conditions identified"
+
+    - id: correlate-rca
+      title: "Correlate findings and identify root cause"
+      type: eval
+      description: |
+        Correlate all diagnostic findings:
+        1. Build a unified timeline from metrics, logs, and k8s events
+        2. Identify the root cause
+        3. Identify contributing factors
+        4. Assess blast radius and ongoing risk
+      deps: [diagnose-metrics, diagnose-logs, diagnose-k8s]
+      priority: High
+      addedBy: incident-commander
+      addedAt: "2026-03-30T14:10:00Z"
+      timeoutMinutes: 60
+      acceptanceCriteria:
+        - "Timeline with all correlated events"
+        - "Root cause identified with supporting evidence"
+        - "Contributing factors listed"
+        - "Ongoing risk assessment"
+      evalGate:
+        evalSuiteRef:
+          name: sre-evals
+        minPassRate: 0.80
+        onFail: Reopen
+
+    - id: create-fix
+      title: "Create remediation PR"
+      type: infra
+      description: |
+        Based on the root cause analysis, create the remediation:
+        - If resource exhaustion: update resource limits or HPA config
+        - If bad deployment: prepare rollback manifest
+        - If dependency issue: update circuit breaker config
+        - If configuration error: fix the config and create PR
+
+        Requirements:
+        - All changes must be submitted as a PR
+        - Include rollback instructions
+        - Include monitoring queries to verify the fix
+        - Document the change rationale
+      deps: [correlate-rca]
+      priority: High
+      addedBy: incident-commander
+      addedAt: "2026-03-30T14:10:00Z"
+      timeoutMinutes: 90
+      acceptanceCriteria:
+        - "PR created with fix"
+        - "Rollback procedure documented"
+        - "Monitoring queries included"
+
+    - id: approval-fix
+      title: "Human approval for production fix"
+      type: approval
+      description: "Request human approval before applying the fix to production"
+      deps: [create-fix]
+      priority: High
+      addedBy: incident-commander
+      addedAt: "2026-03-30T14:10:00Z"
+
+    - id: write-postmortem
+      title: "Write post-mortem report"
+      type: review
+      description: |
+        Write a blameless post-mortem report:
+        - Incident summary (what happened, impact, duration)
+        - Timeline of events
+        - Root cause analysis
+        - What went well
+        - What could be improved
+        - Action items with owners and deadlines
+        - Lessons learned
+      deps: [correlate-rca, create-fix]
+      priority: Medium
+      addedBy: incident-commander
+      addedAt: "2026-03-30T14:10:00Z"
+      timeoutMinutes: 120
+      acceptanceCriteria:
+        - "Post-mortem follows standard template"
+        - "Timeline is complete and accurate"
+        - "Action items are specific, assigned, and have deadlines"
+        - "Root cause matches investigation findings"
+
+  dispatchPolicy:
+    maxConcurrent: 4            # Parallel diagnostics
+    defaultTimeoutMinutes: 60
+    retryPolicy:
+      maxRetries: 2
+      backoffSeconds: 30        # Fast retry for incidents
+      onExhaustion: EscalateToHuman
+    allowAgentMutation: true

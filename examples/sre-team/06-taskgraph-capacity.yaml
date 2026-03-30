@@ -1,0 +1,168 @@
+---
+# TaskGraph: Weekly capacity planning review
+apiVersion: karo.dev/v1alpha1
+kind: TaskGraph
+metadata:
+  name: capacity-review-w14-2026
+  namespace: sre-team
+  labels:
+    team: sre
+    type: capacity
+spec:
+  description: "Weekly capacity review for production infrastructure (Week 14, 2026)"
+
+  ownerAgentRef:
+    name: incident-commander
+
+  dispatcherRef:
+    name: sre-router
+
+  tasks:
+    - id: collect-utilization
+      title: "Collect current resource utilization data"
+      type: eval
+      description: |
+        Query Prometheus for resource utilization across all production namespaces:
+
+        CPU utilization:
+        - avg(rate(container_cpu_usage_seconds_total{namespace=~"production.*"}[1h])) by (namespace, pod)
+        - Compare to resource requests and limits
+
+        Memory utilization:
+        - avg(container_memory_working_set_bytes{namespace=~"production.*"}) by (namespace, pod)
+        - OOM events in the past 7 days
+
+        Disk utilization:
+        - kubelet_volume_stats_used_bytes / kubelet_volume_stats_capacity_bytes
+
+        Network:
+        - rate(container_network_receive_bytes_total[1h]) by (namespace)
+
+        Produce a summary table of top-20 resource consumers.
+      deps: []
+      priority: High
+      addedBy: incident-commander
+      addedAt: "2026-03-30T09:00:00Z"
+      timeoutMinutes: 60
+      acceptanceCriteria:
+        - "Utilization data collected for all production namespaces"
+        - "Top-20 resource consumers listed"
+        - "Any services above 70% utilization flagged"
+
+    - id: trend-analysis
+      title: "Analyze 30-day utilization trends"
+      type: eval
+      description: |
+        Perform trend analysis on resource utilization:
+
+        For each service above 50% utilization:
+        1. Calculate the growth rate over 7d, 30d, 90d windows
+        2. Fit a linear trend to estimate when 80% utilization will be reached
+        3. Identify any services with accelerating growth
+        4. Check if recent scaling actions have been effective
+
+        Use Python/pandas for trend calculation:
+        - Linear regression on utilization time series
+        - Extrapolate to find the "capacity exhaustion date"
+        - Flag services that will hit 80% within 30 days
+
+        Output: sorted list of services by urgency (days until 80% utilization).
+      deps: [collect-utilization]
+      priority: High
+      addedBy: incident-commander
+      addedAt: "2026-03-30T09:00:00Z"
+      timeoutMinutes: 120
+      acceptanceCriteria:
+        - "Trend analysis for all services above 50% utilization"
+        - "Growth rates calculated over multiple time windows"
+        - "Capacity exhaustion dates estimated"
+        - "Services sorted by urgency"
+
+    - id: cost-analysis
+      title: "Analyze current infrastructure costs"
+      type: eval
+      description: |
+        Analyze cost efficiency:
+        1. Identify over-provisioned services (request >> usage)
+        2. Calculate potential savings from right-sizing
+        3. Identify idle or underutilized resources
+        4. Check spot/preemptible node utilization
+        5. Assess bin-packing efficiency per node pool
+      deps: [collect-utilization]
+      priority: Medium
+      addedBy: incident-commander
+      addedAt: "2026-03-30T09:00:00Z"
+      timeoutMinutes: 90
+      acceptanceCriteria:
+        - "Over-provisioned services identified with specific numbers"
+        - "Potential cost savings quantified"
+        - "Right-sizing recommendations provided"
+
+    - id: capacity-plan
+      title: "Write capacity plan with recommendations"
+      type: design
+      description: |
+        Write the weekly capacity plan:
+        1. Executive summary: overall capacity posture (green/yellow/red)
+        2. Critical items: services at immediate risk
+        3. Scaling recommendations with priority and timeline
+        4. Cost optimization opportunities
+        5. Comparison to last week's report (if available in memory)
+
+        Recommendations should include:
+        - Specific HPA min/max changes
+        - Resource request/limit adjustments
+        - Node pool scaling suggestions
+        - PDB updates if needed
+      deps: [trend-analysis, cost-analysis]
+      priority: High
+      addedBy: incident-commander
+      addedAt: "2026-03-30T09:00:00Z"
+      timeoutMinutes: 120
+      acceptanceCriteria:
+        - "Capacity plan with executive summary"
+        - "At least 3 specific scaling recommendations"
+        - "Cost impact estimated for each recommendation"
+        - "Priority and timeline for each action"
+
+    - id: create-scaling-prs
+      title: "Create PRs for recommended scaling changes"
+      type: infra
+      description: |
+        For each approved recommendation in the capacity plan:
+        1. Create the Kubernetes manifest changes (HPA, VPA, resource updates)
+        2. Submit as a PR to the infra repo
+        3. Include monitoring queries to validate the change
+        4. Add rollback instructions
+      deps: [capacity-plan]
+      priority: Medium
+      addedBy: incident-commander
+      addedAt: "2026-03-30T09:00:00Z"
+      timeoutMinutes: 120
+      acceptanceCriteria:
+        - "PRs created for top-priority recommendations"
+        - "Each PR includes rollback instructions"
+        - "Monitoring queries included to verify impact"
+
+    - id: review-plan
+      title: "Review capacity plan and PRs"
+      type: review
+      description: "Review the capacity plan for accuracy and completeness, and verify PRs are safe"
+      deps: [capacity-plan, create-scaling-prs]
+      priority: Medium
+      addedBy: incident-commander
+      addedAt: "2026-03-30T09:00:00Z"
+      timeoutMinutes: 60
+      acceptanceCriteria:
+        - "Capacity plan is accurate and complete"
+        - "PRs are safe and include rollback instructions"
+        - "Recommendations are reasonable and justified"
+
+  dispatchPolicy:
+    maxConcurrent: 3
+    defaultTimeoutMinutes: 120
+    retryPolicy:
+      maxRetries: 1
+      backoffSeconds: 60
+      onExhaustion: EscalateToHuman
+    allowAgentMutation: true

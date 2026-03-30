@@ -1,0 +1,235 @@
+---
+# ModelConfig: Claude Sonnet for SRE tasks
+apiVersion: karo.dev/v1alpha1
+kind: ModelConfig
+metadata:
+  name: claude-sonnet
+  namespace: sre-team
+spec:
+  provider: anthropic
+  model: claude-sonnet-4-20250514
+  apiKeySecret:
+    name: anthropic-api-key
+    key: ANTHROPIC_API_KEY
+  parameters:
+    maxTokens: 8192
+    temperature: "0.1"       # Low temperature for precise diagnostics
+---
+# SandboxClass: restricted egress for SRE (internal monitoring only)
+apiVersion: karo.dev/v1alpha1
+kind: SandboxClass
+metadata:
+  name: sre-sandbox
+  namespace: sre-team
+spec:
+  runtimeClassName: gvisor
+  networkPolicy:
+    egress: restricted
+    allowedDomains:
+      - "prometheus.monitoring.svc"
+      - "loki.monitoring.svc"
+      - "grafana.monitoring.svc"
+      - "api.github.com"
+    allowedCIDRs:
+      - "10.0.0.0/8"        # Internal cluster network
+  filesystem:
+    readOnlyRootFilesystem: false
+    allowedMounts:
+      - /tmp
+      - /workspace
+  resourceLimits:
+    cpu: "2"
+    memory: "4Gi"
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    allowPrivilegeEscalation: false
+    seccompProfile:
+      type: RuntimeDefault
+    capabilities:
+      drop:
+        - ALL
+---
+# MemoryStore: incident knowledge base
+apiVersion: karo.dev/v1alpha1
+kind: MemoryStore
+metadata:
+  name: sre-memory
+  namespace: sre-team
+spec:
+  backend:
+    type: mem0
+    mem0:
+      apiKeySecret:
+        name: mem0-api-key
+        key: API_KEY
+      organizationId: "sre-org"
+      projectId: "sre-team"
+  scope: team
+  retentionDays: 365
+  maxMemories: 50000
+  categories:
+    - incident-timeline
+    - root-cause
+    - runbook
+    - capacity-forecast
+    - infra-change
+    - post-mortem
+    - alert-pattern
+---
+# ToolSet: SRE observability and infra tools
+apiVersion: karo.dev/v1alpha1
+kind: ToolSet
+metadata:
+  name: sre-tools
+  namespace: sre-team
+spec:
+  tools:
+    - name: prometheus
+      type: mcp
+      transport: streamable-http
+      endpoint: "http://prometheus-mcp-server.sre-team.svc:8080"
+      permissions:
+        - query
+        - query_range
+        - alerts
+      credentialSecret:
+        name: prometheus-mcp-credentials
+        key: PROMETHEUS_URL
+
+    - name: loki
+      type: mcp
+      transport: streamable-http
+      endpoint: "http://loki-mcp-server.sre-team.svc:8080"
+      permissions:
+        - query
+        - query_range
+      credentialSecret:
+        name: loki-mcp-credentials
+        key: LOKI_URL
+
+    - name: kubernetes
+      type: mcp
+      transport: streamable-http
+      endpoint: "http://k8s-mcp-server.sre-team.svc:8080"
+      permissions:
+        - get
+        - list
+        - describe
+        - logs
+      credentialSecret:
+        name: k8s-mcp-credentials
+        key: KUBECONFIG
+
+    - name: github
+      type: mcp
+      transport: streamable-http
+      endpoint: "http://github-mcp-server.sre-team.svc:8080"
+      permissions:
+        - read
+        - write
+        - pull-request
+      credentialSecret:
+        name: github-mcp-credentials
+        key: GITHUB_TOKEN
+
+    - name: code-executor
+      type: mcp
+      transport: stdio
+      command: ["/usr/local/bin/code-exec-mcp"]
+      permissions:
+        - execute
+      sandboxRequired: true
+
+  policyRef:
+    name: sre-policy
+---
+# AgentPolicy: SRE governance (strict — production access)
+apiVersion: karo.dev/v1alpha1
+kind: AgentPolicy
+metadata:
+  name: sre-policy
+  namespace: sre-team
+spec:
+  targetSelector:
+    matchLabels:
+      team: sre
+
+  models:
+    allowedProviders:
+      - anthropic
+    requireMinContextWindow: 100000
+
+  toolCalls:
+    maxPerMinute: 120          # Higher rate for metric queries
+    maxPerLoop: 1000
+    requireSandboxForExecute: true
+
+  loop:
+    maxIterationsPerRun: 200
+    maxRunDurationMinutes: 240
+    requireHumanApprovalAfterIterations: 100
+
+  taskGraph:
+    allowMutation: true
+    mutationScope:
+      - addTask
+      - closeTask
+    denyMutation:
+      - deleteTask
+    requireAuditTrail: true
+
+  audit:
+    enabled: true
+    logLevel: Full             # Full audit for production access
+    logDestination:
+      type: stdout
+    retentionDays: 730         # 2 years for compliance
+
+  dataClassification:
+    allowedLevels:
+      - internal
+      - confidential
+    denyPatterns:
+      - ".*password.*"
+      - ".*secret.*"
+      - ".*private.?key.*"
+
+  escalation:
+    onPolicyViolation: Block
+---
+# EvalSuite: SRE quality gates
+apiVersion: karo.dev/v1alpha1
+kind: EvalSuite
+metadata:
+  name: sre-evals
+  namespace: sre-team
+spec:
+  agentSpecRef:
+    name: diagnostics-agent
+  evalCases:
+    - id: root-cause-identified
+      description: "RCA identifies a root cause with evidence"
+      assertions:
+        - type: contains
+          value: "Root Cause:"
+        - type: llm-judge
+          criteria: "The analysis identifies a specific root cause supported by metrics, logs, or events data"
+          judgeModelConfigRef:
+            name: claude-sonnet
+    - id: remediation-safe
+      description: "Proposed remediation does not include destructive operations"
+      assertions:
+        - type: not-contains
+          value: "kubectl delete"
+        - type: not-contains
+          value: "rm -rf"
+        - type: not-contains
+          value: "DROP TABLE"
+    - id: timeline-complete
+      description: "Incident timeline has start, detection, and resolution entries"
+      assertions:
+        - type: llm-judge
+          criteria: "The incident timeline includes when the issue started, when it was detected, key diagnostic steps, and the resolution"
+          judgeModelConfigRef:
+            name: claude-sonnet

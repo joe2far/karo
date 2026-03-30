@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	karov1alpha1 "github.com/joe2far/karo/api/v1alpha1"
@@ -396,7 +397,7 @@ func (h *ToolHandler) addTask(ctx context.Context, args json.RawMessage) (json.R
 	})
 }
 
-func (h *ToolHandler) queryMemory(_ context.Context, args json.RawMessage) (json.RawMessage, error) {
+func (h *ToolHandler) queryMemory(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
 	var params struct {
 		Query      string   `json:"query"`
 		Categories []string `json:"categories"`
@@ -405,15 +406,29 @@ func (h *ToolHandler) queryMemory(_ context.Context, args json.RawMessage) (json
 	if err := json.Unmarshal(args, &params); err != nil {
 		return nil, err
 	}
+	if params.Limit == 0 {
+		params.Limit = 10
+	}
 
-	// Memory query requires backend integration (mem0, redis, pgvector)
-	// Stub returns empty results for now
+	// Find the MemoryStore bound to this agent's AgentSpec.
+	memoryStore, err := h.findMemoryStore(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("no MemoryStore found: %w", err)
+	}
+
+	// Read memories from the MemoryStore's annotations (CRD-backed storage).
+	// For production backends (mem0, redis, pgvector), the annotations store
+	// is a fallback; the controller would integrate with the actual backend.
+	memories := h.readMemoriesFromStore(memoryStore, params.Categories, params.Query, params.Limit)
+
 	return json.Marshal(map[string]interface{}{
-		"memories": []interface{}{},
+		"memories":    memories,
+		"memoryStore": memoryStore.Name,
+		"backend":     memoryStore.Spec.Backend.Type,
 	})
 }
 
-func (h *ToolHandler) storeMemory(_ context.Context, args json.RawMessage) (json.RawMessage, error) {
+func (h *ToolHandler) storeMemory(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
 	var params struct {
 		Content  string                 `json:"content"`
 		Category string                 `json:"category"`
@@ -423,13 +438,134 @@ func (h *ToolHandler) storeMemory(_ context.Context, args json.RawMessage) (json
 		return nil, err
 	}
 
-	// Memory store requires backend integration
-	// Stub returns success
+	// Find the MemoryStore bound to this agent.
+	memoryStore, err := h.findMemoryStore(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("no MemoryStore found: %w", err)
+	}
+
+	// Check max memories limit.
+	if memoryStore.Spec.MaxMemories > 0 && memoryStore.Status.MemoryCount >= memoryStore.Spec.MaxMemories {
+		return nil, fmt.Errorf("memory store %s has reached max capacity (%d)", memoryStore.Name, memoryStore.Spec.MaxMemories)
+	}
+
+	// Store memory entry as an annotation on the MemoryStore CRD.
 	memoryID := fmt.Sprintf("mem-%d", time.Now().UnixNano())
+	entry := map[string]interface{}{
+		"id":        memoryID,
+		"content":   params.Content,
+		"category":  params.Category,
+		"metadata":  params.Metadata,
+		"agent":     h.agentSpec,
+		"timestamp": time.Now().UTC().Format(time.RFC3339),
+	}
+	entryBytes, err := json.Marshal(entry)
+	if err != nil {
+		return nil, err
+	}
+
+	// Store in annotations keyed by memory ID.
+	if memoryStore.Annotations == nil {
+		memoryStore.Annotations = make(map[string]string)
+	}
+	annotationKey := fmt.Sprintf("karo.dev/memory-%s", memoryID)
+	memoryStore.Annotations[annotationKey] = string(entryBytes)
+
+	if err := h.client.Update(ctx, memoryStore); err != nil {
+		return nil, fmt.Errorf("failed to store memory: %w", err)
+	}
+
+	// Update the memory count in status.
+	memoryStore.Status.MemoryCount++
+	now := metav1.Now()
+	memoryStore.Status.LastSyncedAt = &now
+	if err := h.client.Status().Update(ctx, memoryStore); err != nil {
+		// Non-fatal: the memory was stored, status update is best-effort.
+		_ = err
+	}
+
 	return json.Marshal(map[string]interface{}{
-		"memoryId": memoryID,
-		"stored":   true,
+		"memoryId":    memoryID,
+		"stored":      true,
+		"memoryStore": memoryStore.Name,
 	})
+}
+
+// findMemoryStore locates the MemoryStore bound to this agent's AgentSpec.
+func (h *ToolHandler) findMemoryStore(ctx context.Context) (*karov1alpha1.MemoryStore, error) {
+	var stores karov1alpha1.MemoryStoreList
+	if err := h.client.List(ctx, &stores, client.InNamespace(h.namespace)); err != nil {
+		return nil, err
+	}
+
+	// First check for stores that explicitly bind this agent.
+	for i := range stores.Items {
+		store := &stores.Items[i]
+		for _, ref := range store.Spec.BoundAgents {
+			if ref.Name == h.agentSpec {
+				return store, nil
+			}
+		}
+	}
+
+	// Fallback: return the first ready store in the namespace.
+	for i := range stores.Items {
+		if stores.Items[i].Status.Phase == "Ready" {
+			return &stores.Items[i], nil
+		}
+	}
+
+	return nil, fmt.Errorf("no MemoryStore bound to agent %s in namespace %s", h.agentSpec, h.namespace)
+}
+
+// readMemoriesFromStore reads memories from a MemoryStore's annotations.
+func (h *ToolHandler) readMemoriesFromStore(store *karov1alpha1.MemoryStore, categories []string, query string, limit int) []map[string]interface{} {
+	var memories []map[string]interface{}
+
+	categorySet := make(map[string]bool)
+	for _, c := range categories {
+		categorySet[c] = true
+	}
+
+	for key, val := range store.Annotations {
+		if len(key) < 16 || key[:16] != "karo.dev/memory-" {
+			continue
+		}
+		var entry map[string]interface{}
+		if err := json.Unmarshal([]byte(val), &entry); err != nil {
+			continue
+		}
+
+		// Filter by category if specified.
+		if len(categorySet) > 0 {
+			cat, _ := entry["category"].(string)
+			if !categorySet[cat] {
+				continue
+			}
+		}
+
+		// Basic keyword search in content.
+		if query != "" {
+			content, _ := entry["content"].(string)
+			if content == "" || !containsIgnoreCase(content, query) {
+				continue
+			}
+		}
+
+		memories = append(memories, entry)
+		if len(memories) >= limit {
+			break
+		}
+	}
+
+	return memories
+}
+
+// containsIgnoreCase checks if s contains substr (case-insensitive).
+func containsIgnoreCase(s, substr string) bool {
+	sLower := strings.ToLower(s)
+	subLower := strings.ToLower(substr)
+	return strings.Contains(sLower, subLower)
 }
 
 func (h *ToolHandler) reportStatus(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {

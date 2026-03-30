@@ -1,0 +1,78 @@
+---
+# AgentLoop: weekly capacity review
+apiVersion: karo.dev/v1alpha1
+kind: AgentLoop
+metadata:
+  name: capacity-review
+  namespace: sre-team
+spec:
+  agentSpecRef:
+    name: capacity-planner
+
+  triggers:
+    - type: cron
+      schedule: "0 9 * * 1"     # Every Monday at 9am
+    - type: event
+      source:
+        kind: TaskGraph
+        name: "*"
+        event: TaskFailed        # Trigger on incident task failures
+
+  dispatcherRef:
+    name: sre-router
+
+  contextCarryover: true         # Carry over prior capacity data
+---
+# AgentLoop: incident watcher (event-driven)
+apiVersion: karo.dev/v1alpha1
+kind: AgentLoop
+metadata:
+  name: incident-watcher
+  namespace: sre-team
+spec:
+  agentSpecRef:
+    name: incident-commander
+
+  triggers:
+    - type: webhook             # Triggered by PagerDuty/alertmanager webhook
+    - type: cron
+      schedule: "*/30 * * * *"  # Also poll every 30m for stale incidents
+
+  dispatcherRef:
+    name: sre-router
+
+  contextCarryover: false        # Each incident is independent
+---
+# AgentChannel: Slack for SRE team
+apiVersion: karo.dev/v1alpha1
+kind: AgentChannel
+metadata:
+  name: sre-slack
+  namespace: sre-team
+spec:
+  platform:
+    type: slack
+    slack:
+      appCredentialSecret:
+        name: slack-app-credentials
+      signingSecret:
+        name: slack-signing-secret
+      defaultChannel: "#sre-incidents"
+
+  teamRef:
+    name: sre-team
+
+  approvalConfig:
+    requiredApprovers: 1
+    timeoutMinutes: 60           # 1h for production fixes (urgent)
+    reminderIntervalMinutes: 15  # Remind every 15m for P1s
+
+  teamHandoff:
+    - fromTeam: dev-team
+      toTeam: sre-team
+      onEvent: DeploymentReady
+      requireApproval: false     # SRE auto-accepts deployment notifications
+    - fromTeam: sre-team
+      toTeam: dev-team
+      onEvent: BugIdentified
+      requireApproval: true      # Dev team must accept bug assignments

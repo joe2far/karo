@@ -7,6 +7,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -14,6 +15,7 @@ import (
 
 	karov1alpha1 "github.com/joe2far/karo/api/v1alpha1"
 	"github.com/joe2far/karo/internal/dag"
+	"github.com/joe2far/karo/internal/eval"
 )
 
 // +kubebuilder:rbac:groups=karo.dev,resources=taskgraphs,verbs=get;list;watch;create;update;patch;delete
@@ -105,7 +107,7 @@ func (r *TaskGraphReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	// Handle eval gates for EvalPending tasks.
 	for taskID, ts := range tg.Status.TaskStatuses {
 		if ts.Phase == karov1alpha1.TaskPhaseEvalPending {
-			r.runEvalGate(&tg, taskID)
+			r.runEvalGate(ctx, &tg, taskID)
 		}
 	}
 
@@ -281,10 +283,11 @@ func (r *TaskGraphReconciler) recomputeAggregates(tg *karov1alpha1.TaskGraph) {
 	}
 }
 
-// runEvalGate handles tasks in EvalPending phase. Checks the eval gate
-// configuration and transitions the task to Closed (pass) or handles
-// failure via Reopen/Escalate based on the onFail policy.
-func (r *TaskGraphReconciler) runEvalGate(tg *karov1alpha1.TaskGraph, taskID string) {
+// runEvalGate handles tasks in EvalPending phase. Fetches the referenced
+// EvalSuite and runs the eval cases against the task's result artifact.
+// Transitions the task to Closed (pass) or handles failure via
+// Reopen/Escalate based on the onFail policy.
+func (r *TaskGraphReconciler) runEvalGate(ctx context.Context, tg *karov1alpha1.TaskGraph, taskID string) {
 	ts := tg.Status.TaskStatuses[taskID]
 
 	// Find the task spec to check for eval gate config.
@@ -305,50 +308,93 @@ func (r *TaskGraphReconciler) runEvalGate(tg *karov1alpha1.TaskGraph, taskID str
 		return
 	}
 
-	// If there is already an eval result, use it; otherwise stub as passed.
+	// If there is already an eval result, process it.
 	if ts.EvalResult != nil {
-		if ts.EvalResult.Passed {
-			ts.Phase = karov1alpha1.TaskPhaseClosed
-			now := metav1.Now()
-			ts.CompletedAt = &now
-		} else {
-			// Handle failure based on onFail policy.
-			switch task.EvalGate.OnFail {
-			case karov1alpha1.EvalGateFailReopen:
-				failedPassRate := ts.EvalResult.PassRate
-				ts.Phase = karov1alpha1.TaskPhaseOpen
-				ts.RetryCount++
-				ts.FailureNotes = ts.EvalResult.FailureNotes
-				ts.EvalResult = nil
-				ts.AssignedTo = ""
-				ts.AssignedAt = nil
-				ts.StartedAt = nil
-				r.Recorder.Event(tg, "Warning", "EvalGateReopen",
-					fmt.Sprintf("Task %s reopened after eval gate failure (passRate=%.2f)",
-						taskID, failedPassRate))
-			case karov1alpha1.EvalGateFailEscalate:
-				ts.Phase = karov1alpha1.TaskPhaseFailed
-				ts.FailureNotes = fmt.Sprintf("Eval gate failed (passRate=%.2f, min=%.2f): %s",
-					ts.EvalResult.PassRate, task.EvalGate.MinPassRate, ts.EvalResult.FailureNotes)
-				now := metav1.Now()
-				ts.CompletedAt = &now
-				r.Recorder.Event(tg, "Warning", "EvalGateEscalate",
-					fmt.Sprintf("Task %s escalated after eval gate failure", taskID))
-			}
-		}
-	} else {
-		// No eval result yet -- stub: assume pass.
+		r.processEvalResult(tg, task, taskID, &ts)
+		tg.Status.TaskStatuses[taskID] = ts
+		return
+	}
+
+	// Fetch the EvalSuite referenced by the eval gate.
+	var evalSuite karov1alpha1.EvalSuite
+	evalSuiteKey := types.NamespacedName{
+		Name:      task.EvalGate.EvalSuiteRef.Name,
+		Namespace: tg.Namespace,
+	}
+	if err := r.Get(ctx, evalSuiteKey, &evalSuite); err != nil {
+		// EvalSuite not found — log warning and keep in EvalPending for retry.
+		r.Recorder.Eventf(tg, "Warning", "EvalSuiteNotFound",
+			"EvalSuite %s not found for task %s, will retry", task.EvalGate.EvalSuiteRef.Name, taskID)
+		return
+	}
+
+	// Run the eval suite against the task's result artifact.
+	runner := eval.NewRunner(r.Client, evalSuite)
+	input := eval.RunInput{
+		TaskTitle:          task.Title,
+		TaskType:           string(task.Type),
+		AcceptanceCriteria: task.AcceptanceCriteria,
+		ResultArtifact:     ts.ResultArtifactRef,
+	}
+
+	result, err := runner.Run(ctx, input)
+	if err != nil {
+		r.Recorder.Eventf(tg, "Warning", "EvalRunFailed",
+			"Eval run failed for task %s: %v", taskID, err)
+		return
+	}
+
+	// Store the eval result.
+	now := metav1.Now()
+	passed := result.PassRate >= task.EvalGate.MinPassRate
+	ts.EvalResult = &karov1alpha1.EvalResult{
+		PassRate:     result.PassRate,
+		Passed:       passed,
+		FailureNotes: result.FailureNotes,
+		EvaluatedAt:  now,
+	}
+
+	r.Recorder.Eventf(tg, "Normal", "EvalCompleted",
+		"Task %s eval completed: passRate=%.2f, minRequired=%.2f, passed=%v",
+		taskID, result.PassRate, task.EvalGate.MinPassRate, passed)
+
+	// Process the result.
+	r.processEvalResult(tg, task, taskID, &ts)
+	tg.Status.TaskStatuses[taskID] = ts
+}
+
+// processEvalResult handles the outcome of an eval gate check.
+func (r *TaskGraphReconciler) processEvalResult(tg *karov1alpha1.TaskGraph, task *karov1alpha1.Task, taskID string, ts *karov1alpha1.TaskRuntimeState) {
+	if ts.EvalResult.Passed {
 		ts.Phase = karov1alpha1.TaskPhaseClosed
 		now := metav1.Now()
 		ts.CompletedAt = &now
-		ts.EvalResult = &karov1alpha1.EvalResult{
-			PassRate:    1.0,
-			Passed:      true,
-			EvaluatedAt: now,
-		}
+		return
 	}
 
-	tg.Status.TaskStatuses[taskID] = ts
+	// Handle failure based on onFail policy.
+	switch task.EvalGate.OnFail {
+	case karov1alpha1.EvalGateFailReopen:
+		failedPassRate := ts.EvalResult.PassRate
+		ts.Phase = karov1alpha1.TaskPhaseOpen
+		ts.RetryCount++
+		ts.FailureNotes = ts.EvalResult.FailureNotes
+		ts.EvalResult = nil
+		ts.AssignedTo = ""
+		ts.AssignedAt = nil
+		ts.StartedAt = nil
+		r.Recorder.Event(tg, "Warning", "EvalGateReopen",
+			fmt.Sprintf("Task %s reopened after eval gate failure (passRate=%.2f)",
+				taskID, failedPassRate))
+	case karov1alpha1.EvalGateFailEscalate:
+		ts.Phase = karov1alpha1.TaskPhaseFailed
+		ts.FailureNotes = fmt.Sprintf("Eval gate failed (passRate=%.2f, min=%.2f): %s",
+			ts.EvalResult.PassRate, task.EvalGate.MinPassRate, ts.EvalResult.FailureNotes)
+		now := metav1.Now()
+		ts.CompletedAt = &now
+		r.Recorder.Event(tg, "Warning", "EvalGateEscalate",
+			fmt.Sprintf("Task %s escalated after eval gate failure", taskID))
+	}
 }
 
 // validateMutation validates the DAG has no cycles using Kahn's algorithm.

@@ -1,0 +1,342 @@
+---
+# Incident Commander: coordinates incident response and writes post-mortems
+apiVersion: karo.dev/v1alpha1
+kind: AgentSpec
+metadata:
+  name: incident-commander
+  namespace: sre-team
+  labels:
+    team: sre
+    role: orchestrator
+spec:
+  modelConfigRef:
+    name: claude-sonnet
+  systemPrompt:
+    inline: |
+      You are an Incident Commander for an SRE team. Your role is to:
+      1. Coordinate incident response by creating structured investigation plans
+      2. Build incident timelines from diagnostic findings
+      3. Write blameless post-mortem reports
+      4. Identify action items and preventive measures
+      5. Communicate status to stakeholders
+
+      When managing incidents:
+      - Follow the incident response framework: Detect → Triage → Investigate → Remediate → Review
+      - Create tasks for diagnostics, root cause analysis, and remediation
+      - Always build a timeline of events with timestamps
+      - Post-mortems must include: summary, impact, timeline, root cause, action items, lessons learned
+      - Assign priorities based on blast radius and customer impact
+
+      When reviewing capacity:
+      - Focus on services trending toward resource exhaustion
+      - Recommend proactive scaling before issues occur
+      - Consider cost optimization alongside capacity needs
+  capabilities:
+    - name: design
+      skillPrompt:
+        inline: |
+          Create an incident investigation plan or capacity review plan:
+          1. Define the scope and impact assessment
+          2. Create investigation tasks with clear deliverables
+          3. Set priorities based on severity
+          4. Include review and post-mortem tasks
+    - name: review
+      skillPrompt:
+        inline: |
+          Review the RCA findings or capacity report:
+          1. Verify root cause is supported by evidence
+          2. Check remediation is safe and reversible
+          3. Ensure post-mortem includes all required sections
+          4. Validate action items are specific and actionable
+  memoryRef:
+    name: sre-memory
+  toolSetRef:
+    name: sre-tools
+  runtime:
+    image: ghcr.io/karo-dev/karo-claude-code-harness:latest
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "1Gi"
+      limits:
+        cpu: "2"
+        memory: "4Gi"
+  maxContextTokens: 200000
+  onContextExhaustion: checkpoint
+  dispatchable: true
+  scaling:
+    minInstances: 0
+    maxInstances: 2
+    startPolicy: OnDemand
+    cooldownSeconds: 120       # Quick cooldown for incidents
+---
+# Diagnostics Agent: queries metrics, logs, and traces
+apiVersion: karo.dev/v1alpha1
+kind: AgentSpec
+metadata:
+  name: diagnostics-agent
+  namespace: sre-team
+  labels:
+    team: sre
+    role: executor
+spec:
+  modelConfigRef:
+    name: claude-sonnet
+  systemPrompt:
+    inline: |
+      You are an SRE diagnostics specialist. Your role is to:
+      1. Query Prometheus for metric anomalies and trends
+      2. Search Loki logs for errors and warnings
+      3. Inspect Kubernetes events, pod status, and resource usage
+      4. Correlate signals across metrics, logs, and events to identify root causes
+      5. Build evidence-based timelines of what happened
+
+      Diagnostic methodology:
+      - Start with the symptom: what alert fired, what user impact was observed?
+      - Check the "golden signals": latency, traffic, errors, saturation
+      - Look for correlating events: deployments, config changes, dependency issues
+      - Narrow down: which service? which pod? which endpoint?
+      - Build a timeline: when did each anomaly start/end?
+      - Store all findings in team memory for cross-reference
+
+      PromQL tips:
+      - Use rate() for counter metrics over time windows
+      - Use histogram_quantile() for latency percentiles
+      - Compare current values to 1h/1d/7d ago for anomaly detection
+  capabilities:
+    - name: impl
+      skillPrompt:
+        inline: |
+          Investigate the reported issue:
+          1. Query Prometheus for relevant metrics (error rates, latency, saturation)
+          2. Search Loki logs for errors around the incident time window
+          3. Check Kubernetes events and pod status
+          4. Correlate findings into a timeline
+          5. Identify the root cause with supporting evidence
+
+          Format output as:
+          ## Timeline
+          - [timestamp] Event description
+
+          ## Root Cause:
+          Description with evidence
+
+          ## Contributing Factors:
+          - Factor 1
+          - Factor 2
+
+          ## Evidence:
+          - Metric: [query] showed [value] at [time]
+          - Log: [relevant log entry]
+      requiredTools:
+        - prometheus
+        - loki
+        - kubernetes
+    - name: eval
+      skillPrompt:
+        inline: |
+          Analyze metrics data for capacity planning:
+          1. Query resource utilization (CPU, memory, disk, network)
+          2. Calculate trends over 7d, 30d, 90d windows
+          3. Identify services approaching limits
+          4. Forecast when limits will be reached
+      requiredTools:
+        - prometheus
+        - kubernetes
+        - code-executor
+  memoryRef:
+    name: sre-memory
+  toolSetRef:
+    name: sre-tools
+  sandboxClassRef:
+    name: sre-sandbox
+  runtime:
+    image: ghcr.io/karo-dev/karo-goose-harness:latest
+    resources:
+      requests:
+        cpu: "1"
+        memory: "2Gi"
+      limits:
+        cpu: "4"
+        memory: "8Gi"
+  maxContextTokens: 200000
+  onContextExhaustion: restart
+  dispatchable: true
+  scaling:
+    minInstances: 0
+    maxInstances: 5
+    startPolicy: OnDemand
+    cooldownSeconds: 120
+---
+# Capacity Planner: forecasts resource needs and recommends scaling
+apiVersion: karo.dev/v1alpha1
+kind: AgentSpec
+metadata:
+  name: capacity-planner
+  namespace: sre-team
+  labels:
+    team: sre
+    role: executor
+spec:
+  modelConfigRef:
+    name: claude-sonnet
+  systemPrompt:
+    inline: |
+      You are a capacity planning specialist. Your role is to:
+      1. Analyze resource utilization trends across the infrastructure
+      2. Forecast future capacity needs based on growth patterns
+      3. Identify services at risk of resource exhaustion
+      4. Recommend scaling actions (HPA tuning, VPA, node pool changes)
+      5. Balance cost optimization with reliability margins
+
+      Capacity planning framework:
+      - Current utilization: what % of CPU/memory/disk is used?
+      - Trend analysis: is utilization growing? at what rate?
+      - Headroom: how much buffer exists before hitting limits?
+      - Forecast: when will we hit 80% utilization at current growth?
+      - Recommendation: what specific changes are needed?
+
+      Cost considerations:
+      - Right-size over-provisioned workloads
+      - Use spot/preemptible nodes for fault-tolerant workloads
+      - Consider bin-packing efficiency
+      - Factor in burst capacity needs
+  capabilities:
+    - name: eval
+      skillPrompt:
+        inline: |
+          Perform capacity analysis:
+          1. Query current resource utilization across all namespaces
+          2. Calculate 7d, 30d, 90d utilization trends
+          3. Identify top-10 resource consumers
+          4. Flag services above 70% utilization
+          5. Forecast capacity exhaustion dates
+          6. Recommend specific scaling actions with cost estimates
+      requiredTools:
+        - prometheus
+        - kubernetes
+        - code-executor
+    - name: design
+      skillPrompt:
+        inline: |
+          Create a capacity plan document:
+          1. Executive summary of capacity posture
+          2. Per-service utilization report
+          3. Growth forecasts with confidence intervals
+          4. Recommended actions ranked by priority
+          5. Cost impact analysis
+  memoryRef:
+    name: sre-memory
+  toolSetRef:
+    name: sre-tools
+  sandboxClassRef:
+    name: sre-sandbox
+  runtime:
+    image: ghcr.io/karo-dev/karo-goose-harness:latest
+    resources:
+      requests:
+        cpu: "1"
+        memory: "2Gi"
+      limits:
+        cpu: "4"
+        memory: "8Gi"
+  maxContextTokens: 200000
+  onContextExhaustion: restart
+  dispatchable: true
+  scaling:
+    minInstances: 0
+    maxInstances: 2
+    startPolicy: OnDemand
+    cooldownSeconds: 300
+---
+# Remediation Agent: creates and validates infrastructure fixes
+apiVersion: karo.dev/v1alpha1
+kind: AgentSpec
+metadata:
+  name: remediation-agent
+  namespace: sre-team
+  labels:
+    team: sre
+    role: executor
+spec:
+  modelConfigRef:
+    name: claude-sonnet
+  systemPrompt:
+    inline: |
+      You are an SRE remediation specialist. Your role is to:
+      1. Create infrastructure fixes based on root cause analysis
+      2. Write Kubernetes manifests, Helm value changes, or Terraform patches
+      3. Create runbooks for manual remediation steps
+      4. Validate fixes in staging before production application
+      5. Document all changes with rollback procedures
+
+      Safety rules:
+      - NEVER make destructive changes (delete, rm, DROP, etc.)
+      - Always create changes as pull requests, never direct pushes
+      - Include rollback procedures for every change
+      - All changes must be reviewed before merge
+      - Prefer configuration changes over code changes for incident response
+      - Test changes in staging/dev environment first
+
+      Change format:
+      - Description of what the change does and why
+      - The specific files/configs being modified
+      - Expected impact on the system
+      - Rollback procedure
+      - Monitoring queries to verify the fix
+  capabilities:
+    - name: infra
+      skillPrompt:
+        inline: |
+          Create a remediation for the identified root cause:
+          1. Design the fix (config change, scaling, etc.)
+          2. Write the manifests/patches
+          3. Create a PR with description and rollback instructions
+          4. Include monitoring queries to verify the fix
+      requiredTools:
+        - github
+        - kubernetes
+        - code-executor
+    - name: impl
+      skillPrompt:
+        inline: |
+          Implement the infrastructure change:
+          1. Create or modify Kubernetes manifests
+          2. Write the change as a PR to the infra repo
+          3. Include rollback instructions
+          4. Add monitoring validation queries
+      requiredTools:
+        - github
+        - code-executor
+  memoryRef:
+    name: sre-memory
+  toolSetRef:
+    name: sre-tools
+  sandboxClassRef:
+    name: sre-sandbox
+  workspaceCredentials:
+    git:
+      - name: github-infra
+        type: token
+        host: "github.com"
+        credentialSecret:
+          name: remediation-git-token
+          key: GITHUB_TOKEN
+        scope: push
+  runtime:
+    image: ghcr.io/karo-dev/karo-goose-harness:latest
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "1Gi"
+      limits:
+        cpu: "2"
+        memory: "4Gi"
+  maxContextTokens: 200000
+  onContextExhaustion: restart
+  dispatchable: true
+  scaling:
+    minInstances: 0
+    maxInstances: 3
+    startPolicy: OnDemand
+    cooldownSeconds: 300

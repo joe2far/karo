@@ -1,0 +1,165 @@
+---
+# TaskGraph: LLM Orchestration Frameworks comparison
+apiVersion: karo.dev/v1alpha1
+kind: TaskGraph
+metadata:
+  name: tech-research
+  namespace: research-team
+  labels:
+    team: research
+    topic: llm-orchestration
+spec:
+  description: "Research and compare LLM orchestration frameworks for production deployment"
+
+  ownerAgentRef:
+    name: research-lead
+
+  dispatcherRef:
+    name: research-router
+
+  tasks:
+    - id: plan-research
+      title: "Define research plan and methodology"
+      type: design
+      description: |
+        Create a structured research plan for comparing LLM orchestration frameworks:
+        - Define evaluation criteria (scalability, observability, governance, cost, ecosystem)
+        - List candidate frameworks to evaluate (LangGraph, CrewAI, AutoGen, KARO, etc.)
+        - Define data collection methodology
+        - Set deliverable format (comparison matrix, prose report, recommendation)
+      deps: []
+      priority: High
+      addedBy: research-lead
+      addedAt: "2026-03-30T09:00:00Z"
+      timeoutMinutes: 60
+      acceptanceCriteria:
+        - "Research plan document with clear methodology"
+        - "Evaluation criteria defined with weights"
+        - "At least 5 frameworks identified for comparison"
+
+    - id: lit-review-langgraph
+      title: "Literature review: LangGraph"
+      type: impl
+      description: |
+        Research LangGraph framework:
+        - Architecture and core concepts
+        - Deployment model (cloud, self-hosted)
+        - Agent orchestration primitives
+        - Observability and monitoring
+        - Production case studies
+        - Limitations and known issues
+      deps: [plan-research]
+      priority: Medium
+      addedBy: research-lead
+      addedAt: "2026-03-30T09:00:00Z"
+      timeoutMinutes: 120
+      acceptanceCriteria:
+        - "Summary with at least 5 cited sources"
+        - "Architecture diagram or description"
+        - "Strengths and weaknesses analysis"
+
+    - id: lit-review-crewai
+      title: "Literature review: CrewAI"
+      type: impl
+      description: |
+        Research CrewAI framework:
+        - Architecture and core concepts (crews, agents, tasks)
+        - Deployment model
+        - Multi-agent collaboration patterns
+        - Tool integration ecosystem
+        - Production readiness assessment
+      deps: [plan-research]
+      priority: Medium
+      addedBy: research-lead
+      addedAt: "2026-03-30T09:00:00Z"
+      timeoutMinutes: 120
+      acceptanceCriteria:
+        - "Summary with at least 5 cited sources"
+        - "Comparison against evaluation criteria"
+
+    - id: lit-review-autogen
+      title: "Literature review: AutoGen"
+      type: impl
+      description: |
+        Research Microsoft AutoGen framework:
+        - Architecture (conversable agents, group chat)
+        - Code execution capabilities
+        - Multi-agent conversation patterns
+        - Enterprise features and support
+        - Integration with Azure ecosystem
+      deps: [plan-research]
+      priority: Medium
+      addedBy: research-lead
+      addedAt: "2026-03-30T09:00:00Z"
+      timeoutMinutes: 120
+      acceptanceCriteria:
+        - "Summary with at least 5 cited sources"
+        - "Comparison against evaluation criteria"
+
+    - id: benchmark-analysis
+      title: "Quantitative benchmark analysis"
+      type: eval
+      description: |
+        Analyze available benchmarks and performance data:
+        - Latency and throughput comparisons
+        - Cost per task/agent comparisons
+        - Scalability limits
+        - Memory and resource usage
+        Create comparison tables and charts.
+      deps: [lit-review-langgraph, lit-review-crewai, lit-review-autogen]
+      priority: High
+      addedBy: research-lead
+      addedAt: "2026-03-30T09:00:00Z"
+      timeoutMinutes: 180
+      acceptanceCriteria:
+        - "Comparison matrix with quantitative data"
+        - "Methodology for benchmark collection documented"
+        - "Statistical summary where applicable"
+
+    - id: synthesis-report
+      title: "Synthesize findings into recommendation report"
+      type: design
+      description: |
+        Write the final research report:
+        - Executive summary with recommendation
+        - Detailed comparison across all criteria
+        - Risk assessment for each framework
+        - Migration considerations
+        - Recommended framework with justification
+      deps: [benchmark-analysis]
+      priority: High
+      addedBy: research-lead
+      addedAt: "2026-03-30T09:00:00Z"
+      timeoutMinutes: 180
+      acceptanceCriteria:
+        - "Complete report with executive summary"
+        - "All sources cited"
+        - "Clear recommendation with rationale"
+      evalGate:
+        evalSuiteRef:
+          name: research-evals
+        minPassRate: 0.80
+        onFail: Reopen
+
+    - id: peer-review
+      title: "Peer review of research report"
+      type: review
+      description: "Review the synthesis report for accuracy, completeness, and bias"
+      deps: [synthesis-report]
+      priority: High
+      addedBy: research-lead
+      addedAt: "2026-03-30T09:00:00Z"
+      timeoutMinutes: 120
+      acceptanceCriteria:
+        - "All claims verified against sources"
+        - "No logical fallacies or unsupported conclusions"
+        - "Recommendation is well-justified"
+
+  dispatchPolicy:
+    maxConcurrent: 3
+    defaultTimeoutMinutes: 120
+    retryPolicy:
+      maxRetries: 1
+      backoffSeconds: 120
+      onExhaustion: EscalateToHuman
+    allowAgentMutation: true
