@@ -30,14 +30,32 @@ spec:
     slack:
       appCredentialSecret:
         name: slack-app-credentials
+        key: BOT_TOKEN
       signingSecret:
         name: slack-signing-secret
-      defaultChannel: "#research-team"
+        key: SIGNING_SECRET
+      channelId: "C0RESEARCH"
 
-  teamRef:
-    name: research-team
+  inbound:
+    defaultTeamRef:
+      name: research-team
+    mode: task-creation
+    taskGraphTemplate:
+      ownerAgentRef:
+        name: research-lead
+      dispatcherRef:
+        name: research-router
+      initialTaskType: design
 
-  approvalConfig:
-    requiredApprovers: 1
+  outbound:
+    notifyOn:
+      - taskGraphCompleted
+      - taskFailed
+      - approvalRequired
+    format: summary
+
+  approvals:
+    enabled: true
+    style: interactive
     timeoutMinutes: 2880          # 48h for research reviews
-    reminderIntervalMinutes: 480  # remind every 8h
+    onTimeout: Escalate

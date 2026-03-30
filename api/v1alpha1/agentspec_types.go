@@ -82,7 +82,7 @@ type GitCredential struct {
 	Scope            string                   `json:"scope"`
 }
 
-// +kubebuilder:validation:XValidation:rule="has(self.inline) || has(self.configMapRef)",message="either inline or configMapRef must be set"
+// +kubebuilder:validation:XValidation:rule="(has(self.inline) && self.inline != '') || has(self.configMapRef)",message="either inline (non-empty) or configMapRef must be set"
 type SystemPromptConfig struct {
 	Inline       string           `json:"inline,omitempty"`
 	ConfigMapRef *ConfigMapKeyRef `json:"configMapRef,omitempty"`

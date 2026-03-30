@@ -40,20 +40,40 @@ spec:
     slack:
       appCredentialSecret:
         name: slack-app-credentials
+        key: BOT_TOKEN
       signingSecret:
         name: slack-signing-secret
-      defaultChannel: "#dev-team-agents"
+        key: SIGNING_SECRET
+      channelId: "C0DEV-TEAM"
 
-  teamRef:
-    name: dev-team
+  inbound:
+    defaultTeamRef:
+      name: dev-team
+    mode: task-creation
+    taskGraphTemplate:
+      ownerAgentRef:
+        name: planner-agent
+      dispatcherRef:
+        name: dev-router
+      initialTaskType: design
 
-  approvalConfig:
-    requiredApprovers: 1
+  outbound:
+    notifyOn:
+      - taskGraphCompleted
+      - taskFailed
+      - approvalRequired
+    format: summary
+
+  approvals:
+    enabled: true
+    style: interactive
     timeoutMinutes: 1440          # 24h for human approval
-    reminderIntervalMinutes: 240  # remind every 4h
+    onTimeout: Escalate
 
   teamHandoff:
-    - fromTeam: dev-team
-      toTeam: sre-team
-      onEvent: DeploymentReady
+    - fromTeamRef:
+        name: dev-team
+      toTeamRef:
+        name: sre-team
+      trigger: DeploymentReady
       requireApproval: true

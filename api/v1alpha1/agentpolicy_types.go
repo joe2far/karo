@@ -42,9 +42,7 @@ type LoopGovernance struct {
 
 type TaskGraphMutationPolicy struct {
 	AllowMutation     bool     `json:"allowMutation"`
-	// +kubebuilder:validation:items:Enum=addTask;closeTask;addDependency
 	MutationScope     []string `json:"mutationScope,omitempty"`
-	// +kubebuilder:validation:items:Enum=deleteTask;modifyOtherAgentTask
 	DenyMutation      []string `json:"denyMutation,omitempty"`
 	RequireAuditTrail bool     `json:"requireAuditTrail,omitempty"`
 }

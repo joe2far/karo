@@ -55,24 +55,51 @@ spec:
     slack:
       appCredentialSecret:
         name: slack-app-credentials
+        key: BOT_TOKEN
       signingSecret:
         name: slack-signing-secret
-      defaultChannel: "#sre-incidents"
+        key: SIGNING_SECRET
+      channelId: "C0SRE-INCIDENTS"
 
-  teamRef:
-    name: sre-team
+  inbound:
+    defaultTeamRef:
+      name: sre-team
+    mode: auto
+    autoRoute:
+      modelConfigRef:
+        name: claude-sonnet
+      classificationPrompt:
+        inline: |
+          Classify the incoming message as one of: incident, capacity-review, or general.
+          If it mentions an alert, outage, or error — classify as incident.
+          If it mentions scaling, resources, or capacity — classify as capacity-review.
+          Otherwise classify as general.
 
-  approvalConfig:
-    requiredApprovers: 1
+  outbound:
+    notifyOn:
+      - taskGraphCreated
+      - taskGraphCompleted
+      - taskFailed
+      - approvalRequired
+      - evalGateFailed
+    format: detailed
+
+  approvals:
+    enabled: true
+    style: interactive
     timeoutMinutes: 60           # 1h for production fixes (urgent)
-    reminderIntervalMinutes: 15  # Remind every 15m for P1s
+    onTimeout: Fail
 
   teamHandoff:
-    - fromTeam: dev-team
-      toTeam: sre-team
-      onEvent: DeploymentReady
+    - fromTeamRef:
+        name: dev-team
+      toTeamRef:
+        name: sre-team
+      trigger: DeploymentReady
       requireApproval: false     # SRE auto-accepts deployment notifications
-    - fromTeam: sre-team
-      toTeam: dev-team
-      onEvent: BugIdentified
+    - fromTeamRef:
+        name: sre-team
+      toTeamRef:
+        name: dev-team
+      trigger: BugIdentified
       requireApproval: true      # Dev team must accept bug assignments

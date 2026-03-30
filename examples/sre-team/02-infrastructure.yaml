@@ -7,13 +7,13 @@ metadata:
   namespace: sre-team
 spec:
   provider: anthropic
-  model: claude-sonnet-4-20250514
+  name: claude-sonnet-4-20250514
   apiKeySecret:
     name: anthropic-api-key
     key: ANTHROPIC_API_KEY
   parameters:
     maxTokens: 8192
-    temperature: "0.1"       # Low temperature for precise diagnostics
+    temperature: 0.1         # Low temperature for precise diagnostics
 ---
 # SandboxClass: restricted egress for SRE (internal monitoring only)
 apiVersion: karo.dev/v1alpha1

@@ -15,10 +15,6 @@ type TaskGraphSpec struct {
 	DispatchPolicy DispatchPolicy              `json:"dispatchPolicy"`
 }
 
-// +kubebuilder:validation:XValidation:rule="self.id != ''",message="task id must not be empty"
-// +kubebuilder:validation:XValidation:rule="self.title != ''",message="task title must not be empty"
-// +kubebuilder:validation:XValidation:rule="!has(self.evalGate) || self.evalGate.minPassRate >= 0.0 && self.evalGate.minPassRate <= 1.0",message="evalGate.minPassRate must be between 0.0 and 1.0"
-// +kubebuilder:validation:XValidation:rule="!has(self.timeoutMinutes) || self.timeoutMinutes > 0",message="timeoutMinutes must be positive"
 // +kubebuilder:validation:XValidation:rule="!self.deps.exists(d, d == self.id)",message="task cannot depend on itself"
 type Task struct {
 	// +kubebuilder:validation:MinLength=1
@@ -78,8 +74,6 @@ const (
 	EvalGateFailEscalate EvalGateFailAction = "Escalate"
 )
 
-// +kubebuilder:validation:XValidation:rule="self.maxConcurrent >= 0",message="maxConcurrent must be non-negative"
-// +kubebuilder:validation:XValidation:rule="self.retryPolicy.maxRetries >= 0",message="maxRetries must be non-negative"
 type DispatchPolicy struct {
 	// +kubebuilder:validation:Minimum=0
 	MaxConcurrent         int32       `json:"maxConcurrent"`
