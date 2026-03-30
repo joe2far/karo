@@ -10,19 +10,32 @@ type TaskGraphSpec struct {
 	Description    string                      `json:"description,omitempty"`
 	OwnerAgentRef  corev1.LocalObjectReference `json:"ownerAgentRef"`
 	DispatcherRef  corev1.LocalObjectReference `json:"dispatcherRef"`
+	// +kubebuilder:validation:MinItems=1
 	Tasks          []Task                      `json:"tasks"`
 	DispatchPolicy DispatchPolicy              `json:"dispatchPolicy"`
 }
 
+// +kubebuilder:validation:XValidation:rule="self.id != ''",message="task id must not be empty"
+// +kubebuilder:validation:XValidation:rule="self.title != ''",message="task title must not be empty"
+// +kubebuilder:validation:XValidation:rule="!has(self.evalGate) || self.evalGate.minPassRate >= 0.0 && self.evalGate.minPassRate <= 1.0",message="evalGate.minPassRate must be between 0.0 and 1.0"
+// +kubebuilder:validation:XValidation:rule="!has(self.timeoutMinutes) || self.timeoutMinutes > 0",message="timeoutMinutes must be positive"
+// +kubebuilder:validation:XValidation:rule="!self.deps.exists(d, d == self.id)",message="task cannot depend on itself"
 type Task struct {
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([a-z0-9\-]*[a-z0-9])?$`
 	ID                   string                       `json:"id"`
+	// +kubebuilder:validation:MinLength=1
 	Title                string                       `json:"title"`
+	// +kubebuilder:validation:Enum=design;impl;eval;review;infra;approval
 	Type                 TaskType                     `json:"type"`
 	Description          string                       `json:"description,omitempty"`
 	Deps                 []string                     `json:"deps"`
+	// +kubebuilder:validation:Enum=High;Medium;Low
 	Priority             TaskPriority                 `json:"priority"`
 	AddedBy              string                       `json:"addedBy"`
 	AddedAt              metav1.Time                  `json:"addedAt"`
+	// +kubebuilder:validation:Minimum=1
 	TimeoutMinutes       *int32                       `json:"timeoutMinutes,omitempty"`
 	AcceptanceCriteria   []string                     `json:"acceptanceCriteria,omitempty"`
 	EvalGate             *EvalGate                    `json:"evalGate,omitempty"`
@@ -48,9 +61,13 @@ const (
 	TaskPriorityLow    TaskPriority = "Low"
 )
 
+// +kubebuilder:validation:XValidation:rule="self.minPassRate >= 0.0 && self.minPassRate <= 1.0",message="minPassRate must be between 0.0 and 1.0"
 type EvalGate struct {
 	EvalSuiteRef corev1.LocalObjectReference `json:"evalSuiteRef"`
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=1
 	MinPassRate  float64                     `json:"minPassRate"`
+	// +kubebuilder:validation:Enum=Reopen;Escalate
 	OnFail       EvalGateFailAction          `json:"onFail"`
 }
 
@@ -61,16 +78,23 @@ const (
 	EvalGateFailEscalate EvalGateFailAction = "Escalate"
 )
 
+// +kubebuilder:validation:XValidation:rule="self.maxConcurrent >= 0",message="maxConcurrent must be non-negative"
+// +kubebuilder:validation:XValidation:rule="self.retryPolicy.maxRetries >= 0",message="maxRetries must be non-negative"
 type DispatchPolicy struct {
+	// +kubebuilder:validation:Minimum=0
 	MaxConcurrent         int32       `json:"maxConcurrent"`
+	// +kubebuilder:validation:Minimum=1
 	DefaultTimeoutMinutes *int32      `json:"defaultTimeoutMinutes,omitempty"`
 	RetryPolicy           RetryPolicy `json:"retryPolicy"`
 	AllowAgentMutation    bool        `json:"allowAgentMutation"`
 }
 
 type RetryPolicy struct {
+	// +kubebuilder:validation:Minimum=0
 	MaxRetries     int32  `json:"maxRetries"`
+	// +kubebuilder:validation:Minimum=0
 	BackoffSeconds int32  `json:"backoffSeconds"`
+	// +kubebuilder:validation:Enum=EscalateToHuman;Fail;Reopen
 	OnExhaustion   string `json:"onExhaustion"`
 }
 
@@ -127,6 +151,8 @@ const (
 )
 
 type EvalResult struct {
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=1
 	PassRate     float64     `json:"passRate"`
 	Passed       bool        `json:"passed"`
 	FailureNotes string      `json:"failureNotes,omitempty"`

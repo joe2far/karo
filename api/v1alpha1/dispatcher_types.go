@@ -5,7 +5,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// +kubebuilder:validation:XValidation:rule="self.mode != 'capability' || size(self.capabilityRoutes) > 0",message="capabilityRoutes required when mode is capability"
+// +kubebuilder:validation:XValidation:rule="self.mode != 'llm-route' || has(self.llmRoute)",message="llmRoute config required when mode is llm-route"
 type DispatcherSpec struct {
+	// +kubebuilder:validation:Enum=capability;llm-route;round-robin
 	Mode                 DispatchMode                 `json:"mode"`
 	TaskGraphSelector    metav1.LabelSelector         `json:"taskGraphSelector,omitempty"`
 	CapabilityRoutes     []CapabilityRoute            `json:"capabilityRoutes,omitempty"`
@@ -23,11 +26,13 @@ const (
 )
 
 type CapabilityRoute struct {
+	// +kubebuilder:validation:MinLength=1
 	Capability   string                      `json:"capability"`
 	AgentSpecRef corev1.LocalObjectReference `json:"agentSpecRef"`
 }
 
 type MessagingConfig struct {
+	// +kubebuilder:validation:Enum=mailbox;webhook;kafka
 	Type           string `json:"type"`
 	MailboxPattern string `json:"mailboxPattern,omitempty"`
 }

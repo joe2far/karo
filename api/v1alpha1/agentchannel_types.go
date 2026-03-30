@@ -5,6 +5,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// +kubebuilder:validation:XValidation:rule="self.platform.type != 'slack' || has(self.platform.slack)",message="slack config required when platform type is slack"
+// +kubebuilder:validation:XValidation:rule="self.platform.type != 'telegram' || has(self.platform.telegram)",message="telegram config required when platform type is telegram"
+// +kubebuilder:validation:XValidation:rule="self.platform.type != 'discord' || has(self.platform.discord)",message="discord config required when platform type is discord"
+// +kubebuilder:validation:XValidation:rule="self.platform.type != 'teams' || has(self.platform.teams)",message="teams config required when platform type is teams"
+// +kubebuilder:validation:XValidation:rule="self.platform.type != 'webhook' || has(self.platform.webhook)",message="webhook config required when platform type is webhook"
 type AgentChannelSpec struct {
 	Platform    ChannelPlatform   `json:"platform"`
 	Inbound     InboundConfig     `json:"inbound"`
@@ -14,6 +19,7 @@ type AgentChannelSpec struct {
 }
 
 type ChannelPlatform struct {
+	// +kubebuilder:validation:Enum=slack;telegram;discord;teams;webhook
 	Type     ChannelPlatformType `json:"type"`
 	Slack    *SlackConfig        `json:"slack,omitempty"`
 	Telegram *TelegramConfig     `json:"telegram,omitempty"`
@@ -36,6 +42,7 @@ type SlackConfig struct {
 	AppCredentialSecret corev1.SecretKeySelector  `json:"appCredentialSecret"`
 	SigningSecret       corev1.SecretKeySelector  `json:"signingSecret"`
 	AppToken            *corev1.SecretKeySelector `json:"appToken,omitempty"`
+	// +kubebuilder:validation:MinLength=1
 	ChannelID           string                    `json:"channelId"`
 	SocketMode          bool                      `json:"socketMode,omitempty"`
 	AllowedUserIDs      []string                  `json:"allowedUserIds,omitempty"`
@@ -46,13 +53,16 @@ type TelegramConfig struct {
 	BotTokenSecret corev1.SecretKeySelector `json:"botTokenSecret"`
 	ChatID         string                   `json:"chatId,omitempty"`
 	AllowedUserIDs []string                 `json:"allowedUserIds,omitempty"`
+	// +kubebuilder:validation:Enum=allow;deny
 	DMPolicy       string                   `json:"dmPolicy,omitempty"`
 	InlineKeyboard bool                     `json:"inlineKeyboard,omitempty"`
 }
 
 type DiscordConfig struct {
 	BotTokenSecret       corev1.SecretKeySelector `json:"botTokenSecret"`
+	// +kubebuilder:validation:MinLength=1
 	GuildID              string                   `json:"guildId"`
+	// +kubebuilder:validation:MinLength=1
 	ChannelID            string                   `json:"channelId"`
 	AllowedRoleIDs       []string                 `json:"allowedRoleIds,omitempty"`
 	ThreadReplies        bool                     `json:"threadReplies,omitempty"`
@@ -61,6 +71,7 @@ type DiscordConfig struct {
 
 type TeamsConfig struct {
 	AppCredentialSecret corev1.SecretKeySelector `json:"appCredentialSecret"`
+	// +kubebuilder:validation:MinLength=1
 	TenantID            string                   `json:"tenantId"`
 	TeamID              string                   `json:"teamId,omitempty"`
 	ChannelID           string                   `json:"channelId,omitempty"`
@@ -68,13 +79,16 @@ type TeamsConfig struct {
 }
 
 type WebhookConfig struct {
+	// +kubebuilder:validation:MinLength=1
 	InboundURL  string                    `json:"inboundUrl"`
+	// +kubebuilder:validation:MinLength=1
 	OutboundURL string                    `json:"outboundUrl"`
 	AuthSecret  *corev1.SecretKeySelector `json:"authSecret,omitempty"`
 }
 
 type InboundConfig struct {
 	DefaultTeamRef    corev1.LocalObjectReference `json:"defaultTeamRef"`
+	// +kubebuilder:validation:Enum=task-creation;human-override;auto
 	Mode              InboundMode                 `json:"mode"`
 	TaskGraphTemplate *TaskGraphTemplate          `json:"taskGraphTemplate,omitempty"`
 	AutoRoute         *AutoRouteConfig            `json:"autoRoute,omitempty"`
@@ -91,6 +105,7 @@ const (
 type TaskGraphTemplate struct {
 	OwnerAgentRef   corev1.LocalObjectReference `json:"ownerAgentRef"`
 	DispatcherRef   corev1.LocalObjectReference `json:"dispatcherRef"`
+	// +kubebuilder:validation:Enum=design;impl;eval;review;infra;approval
 	InitialTaskType TaskType                    `json:"initialTaskType"`
 }
 
@@ -101,6 +116,7 @@ type AutoRouteConfig struct {
 
 type OutboundConfig struct {
 	NotifyOn              []ChannelEvent               `json:"notifyOn"`
+	// +kubebuilder:validation:Enum=summary;detailed;minimal
 	Format                OutboundFormat               `json:"format"`
 	SummaryModelConfigRef *corev1.LocalObjectReference `json:"summaryModelConfigRef,omitempty"`
 }
@@ -125,8 +141,11 @@ const (
 
 type ApprovalConfig struct {
 	Enabled        bool          `json:"enabled"`
+	// +kubebuilder:validation:Enum=interactive;reply
 	Style          ApprovalStyle `json:"style"`
+	// +kubebuilder:validation:Minimum=1
 	TimeoutMinutes int32         `json:"timeoutMinutes,omitempty"`
+	// +kubebuilder:validation:Enum=Fail;Escalate;Approve
 	OnTimeout      string        `json:"onTimeout"`
 }
 
@@ -140,6 +159,7 @@ const (
 type TeamHandoffRule struct {
 	FromTeamRef              corev1.LocalObjectReference `json:"fromTeamRef"`
 	ToTeamRef                corev1.LocalObjectReference `json:"toTeamRef"`
+	// +kubebuilder:validation:MinLength=1
 	Trigger                  string                      `json:"trigger"`
 	RequireApproval          bool                        `json:"requireApproval"`
 	HandoffTaskGraphTemplate *TaskGraphTemplate          `json:"handoffTaskGraphTemplate,omitempty"`

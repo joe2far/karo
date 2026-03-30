@@ -6,13 +6,19 @@ import (
 )
 
 type ToolSetSpec struct {
+	// +kubebuilder:validation:MinItems=1
 	Tools     []ToolEntry                  `json:"tools"`
 	PolicyRef *corev1.LocalObjectReference `json:"policyRef,omitempty"`
 }
 
+// +kubebuilder:validation:XValidation:rule="self.transport != 'stdio' || size(self.command) > 0",message="command required for stdio transport"
+// +kubebuilder:validation:XValidation:rule="self.transport == 'stdio' || self.endpoint != ''",message="endpoint required for sse and streamable-http transport"
 type ToolEntry struct {
+	// +kubebuilder:validation:MinLength=1
 	Name             string                    `json:"name"`
+	// +kubebuilder:validation:Enum=mcp
 	Type             string                    `json:"type"`
+	// +kubebuilder:validation:Enum=stdio;sse;streamable-http
 	Transport        MCPTransport              `json:"transport"`
 	Endpoint         string                    `json:"endpoint,omitempty"`
 	Command          []string                  `json:"command,omitempty"`
