@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -115,7 +116,17 @@ func (r *EvalSuiteReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	// Set AgentSpecReady condition.
-	if !degraded || len(degradedReasons) == 0 {
+	var agentSpecFound bool
+	for _, reason := range degradedReasons {
+		if strings.Contains(reason, "AgentSpec") {
+			agentSpecFound = false
+			break
+		}
+	}
+	if !degraded {
+		agentSpecFound = true
+	}
+	if agentSpecFound {
 		setCondition(&evalSuite.Status.Conditions, metav1.Condition{
 			Type:               "AgentSpecReady",
 			Status:             metav1.ConditionTrue,
@@ -123,6 +134,15 @@ func (r *EvalSuiteReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			LastTransitionTime: metav1.Now(),
 			Reason:             "AgentSpecFound",
 			Message:            fmt.Sprintf("AgentSpec %s is available", evalSuite.Spec.AgentSpecRef.Name),
+		})
+	} else {
+		setCondition(&evalSuite.Status.Conditions, metav1.Condition{
+			Type:               "AgentSpecReady",
+			Status:             metav1.ConditionFalse,
+			ObservedGeneration: evalSuite.Generation,
+			LastTransitionTime: metav1.Now(),
+			Reason:             "AgentSpecNotFound",
+			Message:            fmt.Sprintf("AgentSpec %s not found", evalSuite.Spec.AgentSpecRef.Name),
 		})
 	}
 

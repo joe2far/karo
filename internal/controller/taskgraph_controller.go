@@ -21,6 +21,7 @@ import (
 // +kubebuilder:rbac:groups=karo.dev,resources=taskgraphs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=karo.dev,resources=taskgraphs/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=karo.dev,resources=taskgraphs/finalizers,verbs=update
+// +kubebuilder:rbac:groups=karo.dev,resources=evalsuites,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
 // TaskGraphReconciler reconciles a TaskGraph object.

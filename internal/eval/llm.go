@@ -16,11 +16,14 @@ type HTTPLLMCaller struct {
 	HTTPClient *http.Client
 }
 
+// defaultHTTPClient is a shared client for connection pooling.
+var defaultHTTPClient = &http.Client{Timeout: 60 * time.Second}
+
 func (c *HTTPLLMCaller) httpClient() *http.Client {
 	if c.HTTPClient != nil {
 		return c.HTTPClient
 	}
-	return &http.Client{Timeout: 60 * time.Second}
+	return defaultHTTPClient
 }
 
 // Judge calls the LLM to evaluate whether the artifact meets the criteria.

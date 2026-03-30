@@ -184,6 +184,14 @@ func (pc *PolicyCompiler) ensureConfigMap(ctx context.Context, agentSpec *karov1
 				"karo.dev/agent-spec":   agentSpec.Name,
 				"karo.dev/agent-policy": policy.Name,
 			},
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: "karo.dev/v1alpha1",
+					Kind:       "AgentPolicy",
+					Name:       policy.Name,
+					UID:        policy.UID,
+				},
+			},
 		},
 		Data: map[string]string{
 			"policy.json": string(policyJSON),

@@ -410,10 +410,8 @@ func (pm *PolicyManager) CleanupPolicies(ctx context.Context, sandbox *karov1alp
 	cilium.SetName(policyName)
 	cilium.SetNamespace(sandbox.Namespace)
 	if err := pm.client.Delete(ctx, cilium); err != nil && !errors.IsNotFound(err) {
-		// Ignore not-found and CRD-not-installed errors.
-		if !errors.IsNotFound(err) {
-			log.FromContext(ctx).V(1).Info("could not delete CiliumNetworkPolicy", "error", err)
-		}
+		// Log but don't fail — CRD may not be installed.
+		log.FromContext(ctx).V(1).Info("could not delete CiliumNetworkPolicy", "error", err)
 	}
 
 	// Try deleting standard NetworkPolicy.

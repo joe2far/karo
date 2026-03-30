@@ -135,13 +135,34 @@ func (r *MemoryStoreReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	// Validate boundAgents references exist.
+	var missingAgents []string
 	for _, agentRef := range memoryStore.Spec.BoundAgents {
 		var agentSpec karov1alpha1.AgentSpec
 		key := types.NamespacedName{Name: agentRef.Name, Namespace: memoryStore.Namespace}
 		if err := r.Get(ctx, key, &agentSpec); err != nil {
+			missingAgents = append(missingAgents, agentRef.Name)
 			r.Recorder.Eventf(&memoryStore, corev1.EventTypeWarning, "BoundAgentNotFound",
 				"Bound AgentSpec %s not found", agentRef.Name)
 		}
+	}
+	if len(missingAgents) > 0 {
+		setCondition(&memoryStore.Status.Conditions, metav1.Condition{
+			Type:               "BoundAgentsReady",
+			Status:             metav1.ConditionFalse,
+			ObservedGeneration: memoryStore.Generation,
+			LastTransitionTime: metav1.Now(),
+			Reason:             "AgentsNotFound",
+			Message:            fmt.Sprintf("Bound AgentSpecs not found: %v", missingAgents),
+		})
+	} else if len(memoryStore.Spec.BoundAgents) > 0 {
+		setCondition(&memoryStore.Status.Conditions, metav1.Condition{
+			Type:               "BoundAgentsReady",
+			Status:             metav1.ConditionTrue,
+			ObservedGeneration: memoryStore.Generation,
+			LastTransitionTime: metav1.Now(),
+			Reason:             "AllAgentsFound",
+			Message:            fmt.Sprintf("All %d bound AgentSpecs found", len(memoryStore.Spec.BoundAgents)),
+		})
 	}
 
 	// Update status.

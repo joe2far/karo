@@ -277,6 +277,14 @@ func (h *ToolHandler) completeTask(ctx context.Context, args json.RawMessage) (j
 		return nil, fmt.Errorf("task %s not found in TaskGraph %s", params.TaskID, params.TaskGraphName)
 	}
 
+	// Validate task is in a completable phase.
+	switch ts.Phase {
+	case karov1alpha1.TaskPhaseInProgress, karov1alpha1.TaskPhaseDispatched, karov1alpha1.TaskPhaseOpen:
+		// Valid phases for completion.
+	default:
+		return nil, fmt.Errorf("task %s is in phase %s, cannot complete", params.TaskID, ts.Phase)
+	}
+
 	ts.ResultArtifactRef = params.ResultArtifactRef
 
 	// Check if task has eval gate
@@ -333,6 +341,8 @@ func (h *ToolHandler) failTask(ctx context.Context, args json.RawMessage) (json.
 
 	ts.Phase = karov1alpha1.TaskPhaseFailed
 	ts.FailureNotes = params.Reason
+	now := metav1.Now()
+	ts.CompletedAt = &now
 	tg.Status.TaskStatuses[params.TaskID] = ts
 
 	if err := h.client.Status().Update(ctx, &tg); err != nil {
@@ -370,6 +380,13 @@ func (h *ToolHandler) addTask(ctx context.Context, args json.RawMessage) (json.R
 
 	if !tg.Spec.DispatchPolicy.AllowAgentMutation {
 		return nil, fmt.Errorf("TaskGraph %s does not allow agent mutation", params.TaskGraphName)
+	}
+
+	// Validate task ID uniqueness.
+	for _, existing := range tg.Spec.Tasks {
+		if existing.ID == params.Task.ID {
+			return nil, fmt.Errorf("task ID %q already exists in TaskGraph %s", params.Task.ID, params.TaskGraphName)
+		}
 	}
 
 	newTask := karov1alpha1.Task{
@@ -590,9 +607,22 @@ func (h *ToolHandler) reportStatus(ctx context.Context, args json.RawMessage) (j
 	now := metav1.Now()
 	instance.Status.LastActiveAt = &now
 
+	// Map reported status to AgentInstance phase.
+	switch params.Status {
+	case "active":
+		instance.Status.Phase = karov1alpha1.AgentInstancePhaseRunning
+	case "idle":
+		instance.Status.Phase = karov1alpha1.AgentInstancePhaseIdle
+	case "checkpoint-requested":
+		instance.Status.Phase = karov1alpha1.AgentInstancePhaseHibernated
+	}
+
 	if err := h.client.Status().Update(ctx, &instance); err != nil {
 		return nil, err
 	}
 
-	return json.Marshal(map[string]interface{}{"accepted": true})
+	return json.Marshal(map[string]interface{}{
+		"accepted": true,
+		"phase":    string(instance.Status.Phase),
+	})
 }
