@@ -1,0 +1,211 @@
+---
+# TaskGraph: Build an agent team spec for a target team/project
+apiVersion: karo.dev/v1alpha1
+kind: TaskGraph
+metadata:
+  name: build-team-spec-payments
+  namespace: team-builder
+  labels:
+    team: team-builder
+    type: team-build
+spec:
+  description: |
+    Build a KARO AgentTeam specification for the Payments team.
+    Research their GitHub repos, Jira project (PAY), and existing
+    team patterns to design an optimal agent team composition.
+
+  ownerAgentRef:
+    name: team-architect
+
+  dispatcherRef:
+    name: team-builder-router
+
+  tasks:
+    - id: research-issues
+      title: "Research Jira issue history for target project"
+      type: impl
+      description: |
+        Research the target team's Jira project:
+        1. Query the last 90 days of issues from the PAY project
+        2. Categorize by type: bug, feature, ops, security, incident, tech-debt
+        3. Identify frequency patterns and recurring issue types
+        4. Note which issues required cross-team collaboration
+        5. Document common workflows (e.g., bug triage, feature rollout, incident response)
+        6. Identify integration points (CI/CD, monitoring, Slack channels)
+
+        Output a structured research brief with:
+        - Issue type distribution (count and percentage)
+        - Top 10 recurring issue patterns
+        - Common workflow sequences
+        - Required external integrations
+      deps: []
+      priority: High
+      addedBy: team-architect
+      addedAt: "2026-04-01T10:00:00Z"
+      timeoutMinutes: 60
+      acceptanceCriteria:
+        - "Issue categorization with counts for each type"
+        - "At least 5 identified workflow patterns"
+        - "Integration requirements documented"
+
+    - id: research-repos
+      title: "Research GitHub repositories and CI/CD patterns"
+      type: impl
+      description: |
+        Research the target team's GitHub repositories:
+        1. List all repos owned by or frequently contributed to by the team
+        2. Analyze CI/CD pipeline configurations (.github/workflows, Jenkinsfile, etc.)
+        3. Review PR patterns: average size, review requirements, merge frequency
+        4. Identify testing patterns and quality gates
+        5. Note deployment strategies (blue-green, canary, etc.)
+        6. Document the tech stack and dependencies
+
+        Output:
+        - Repository inventory with descriptions
+        - CI/CD pipeline summary
+        - PR workflow patterns
+        - Tech stack overview
+      deps: []
+      priority: High
+      addedBy: team-architect
+      addedAt: "2026-04-01T10:00:00Z"
+      timeoutMinutes: 60
+      acceptanceCriteria:
+        - "Repository inventory complete"
+        - "CI/CD patterns documented"
+        - "Tech stack identified"
+
+    - id: research-existing-teams
+      title: "Research existing KARO agent team patterns"
+      type: impl
+      description: |
+        Research existing AgentTeam specs in the cluster:
+        1. List all AgentTeam resources across namespaces
+        2. Analyze common patterns: team sizes, role distributions, tool configurations
+        3. Identify reusable components (ModelConfigs, ToolSets, SandboxClasses)
+        4. Note effective evaluation gate configurations
+        5. Document successful dispatcher routing strategies
+
+        Output:
+        - Existing team inventory with composition summary
+        - Common patterns and best practices observed
+        - Reusable infrastructure components
+      deps: []
+      priority: Medium
+      addedBy: team-architect
+      addedAt: "2026-04-01T10:00:00Z"
+      timeoutMinutes: 45
+      acceptanceCriteria:
+        - "Existing teams catalogued"
+        - "Common patterns identified"
+        - "Reusable components listed"
+
+    - id: design-team
+      title: "Design the AgentTeam specification"
+      type: design
+      description: |
+        Based on all research findings, design the AgentTeam:
+        1. Determine the number of agents and their roles
+        2. Define each agent's system prompt, capabilities, and tool requirements
+        3. Design the Dispatcher routing configuration
+        4. Specify shared resources (ModelConfig, MemoryStore, ToolSet, SandboxClass)
+        5. Define the AgentPolicy governance rules
+        6. Design evaluation gates for quality-critical tasks
+        7. Configure AgentLoop triggers if recurring work is needed
+        8. Set up AgentChannel integrations (Slack, etc.)
+
+        The design must:
+        - Cover all identified workflow patterns from research
+        - Follow the principle of least privilege
+        - Include human escalation paths for high-risk operations
+        - Be production-ready and deployable
+      deps: [research-issues, research-repos, research-existing-teams]
+      priority: High
+      addedBy: team-architect
+      addedAt: "2026-04-01T10:00:00Z"
+      timeoutMinutes: 90
+      acceptanceCriteria:
+        - "Agent roles and capabilities defined"
+        - "Dispatcher routing covers all workflows"
+        - "Shared resources configured"
+        - "Policy and eval gates included"
+
+    - id: generate-manifests
+      title: "Generate complete KARO YAML manifests"
+      type: impl
+      description: |
+        Generate the complete set of KARO manifests from the design:
+        1. 00-namespace.yaml - Namespace with labels
+        2. 01-secrets.yaml - All required secrets (placeholder values)
+        3. 02-infrastructure.yaml - ModelConfig, SandboxClass, MemoryStore, ToolSet, AgentPolicy, EvalSuite
+        4. 03-agents.yaml - All AgentSpec definitions
+        5. 04-team.yaml - AgentTeam and Dispatcher
+        6. 05-taskgraph.yaml - Example TaskGraph for a typical workflow
+        7. 06-loop-channel.yaml - AgentLoop and AgentChannel (if applicable)
+        8. README.md - Documentation with architecture diagram and quick start
+
+        Validate all cross-references and ensure YAML is syntactically correct.
+      deps: [design-team]
+      priority: High
+      addedBy: team-architect
+      addedAt: "2026-04-01T10:00:00Z"
+      timeoutMinutes: 60
+      acceptanceCriteria:
+        - "All manifest files generated"
+        - "Cross-references are consistent"
+        - "YAML syntax is valid"
+
+    - id: validate-spec
+      title: "Validate the generated team specification"
+      type: eval
+      description: |
+        Validate the complete manifest set:
+        1. Parse all YAML files for syntax errors
+        2. Verify all name references resolve (agentSpecRef, modelConfigRef, etc.)
+        3. Confirm dispatcher routes cover all agent capabilities
+        4. Check that agent capabilities match identified workflows
+        5. Validate resource limits are appropriate
+        6. Ensure policy rules are complete
+      deps: [generate-manifests]
+      priority: High
+      addedBy: team-architect
+      addedAt: "2026-04-01T10:00:00Z"
+      timeoutMinutes: 30
+      evalGate:
+        evalSuiteRef:
+          name: team-builder-evals
+        minPassRate: 0.80
+        onFail: Reopen
+      acceptanceCriteria:
+        - "All YAML parses without errors"
+        - "All cross-references resolve"
+        - "Capability coverage is complete"
+
+    - id: review-spec
+      title: "Final review and polish"
+      type: review
+      description: |
+        Final review of the generated AgentTeam spec:
+        1. Review system prompts for clarity and completeness
+        2. Verify the team composition makes sense for the use case
+        3. Check that the README accurately describes the team
+        4. Ensure the example TaskGraph demonstrates a realistic workflow
+        5. Polish naming, descriptions, and documentation
+      deps: [validate-spec]
+      priority: Medium
+      addedBy: team-architect
+      addedAt: "2026-04-01T10:00:00Z"
+      timeoutMinutes: 45
+      acceptanceCriteria:
+        - "System prompts are clear and actionable"
+        - "Team composition is justified"
+        - "README is complete with architecture diagram"
+
+  dispatchPolicy:
+    maxConcurrent: 3
+    defaultTimeoutMinutes: 60
+    retryPolicy:
+      maxRetries: 2
+      backoffSeconds: 60
+      onExhaustion: EscalateToHuman
+    allowAgentMutation: true

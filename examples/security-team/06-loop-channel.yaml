@@ -1,0 +1,67 @@
+---
+# AgentLoop: watch for new Wiz finding Jira issues
+apiVersion: karo.dev/v1alpha1
+kind: AgentLoop
+metadata:
+  name: wiz-finding-watcher
+  namespace: security-team
+spec:
+  agentSpecRef:
+    name: security-lead
+
+  triggers:
+    - type: webhook             # Triggered by Jira webhook on new issue in SEC project
+    - type: cron
+      schedule: "0 */4 * * *"  # Also poll every 4 hours for any missed findings
+
+  dispatcherRef:
+    name: security-router
+
+  contextCarryover: false        # Each finding is independent
+---
+# AgentChannel: Slack for security team notifications
+apiVersion: karo.dev/v1alpha1
+kind: AgentChannel
+metadata:
+  name: security-slack
+  namespace: security-team
+spec:
+  platform:
+    type: slack
+    slack:
+      appCredentialSecret:
+        name: slack-app-credentials
+        key: BOT_TOKEN
+      signingSecret:
+        name: slack-signing-secret
+        key: SIGNING_SECRET
+      channelId: "C0SECURITY"
+
+  inbound:
+    defaultTeamRef:
+      name: security-team
+    mode: auto
+    autoRoute:
+      modelConfigRef:
+        name: claude-sonnet
+      classificationPrompt:
+        inline: |
+          Classify the incoming message as one of: wiz-finding, remediation-status, or general.
+          If it mentions a Wiz finding, CVE, or vulnerability to remediate — classify as wiz-finding.
+          If it asks about the status of an ongoing remediation — classify as remediation-status.
+          Otherwise classify as general.
+
+  outbound:
+    notifyOn:
+      - taskGraphCreated
+      - taskGraphCompleted
+      - taskFailed
+      - approvalRequired
+      - evalGateFailed
+    format: detailed
+
+  approvals:
+    enabled: true
+    style: interactive
+    timeoutMinutes: 240          # 4 hours for security PR approvals
+    onTimeout: Fail

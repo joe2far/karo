@@ -1,0 +1,77 @@
+---
+# Agent Team: Security Remediation team
+apiVersion: karo.dev/v1alpha1
+kind: AgentTeam
+metadata:
+  name: security-team
+  namespace: security-team
+spec:
+  description: >-
+    Security remediation team that responds to Jira issues created from Wiz
+    vulnerability findings. Reviews the finding details, analyzes affected
+    dependencies, determines upgrade paths, and implements the fixes as pull
+    requests. Typically handles library/dependency updates to address CVEs.
+
+  agents:
+    - agentSpecRef:
+        name: security-lead
+      role: orchestrator
+    - agentSpecRef:
+        name: vulnerability-analyst
+      role: evaluator
+    - agentSpecRef:
+        name: remediation-engineer
+      role: executor
+
+  sharedResources:
+    memoryRef:
+      name: security-memory
+    toolSetRef:
+      name: security-tools
+    sandboxClassRef:
+      name: security-sandbox
+    modelConfigRef:
+      name: claude-sonnet
+
+  dispatcherRef:
+    name: security-router
+
+  policyRef:
+    name: security-policy
+---
+# Dispatcher: routes security tasks
+apiVersion: karo.dev/v1alpha1
+kind: Dispatcher
+metadata:
+  name: security-router
+  namespace: security-team
+spec:
+  mode: capability
+
+  taskGraphSelector:
+    matchLabels:
+      team: security
+
+  capabilityRoutes:
+    - capability: design
+      agentSpecRef:
+        name: security-lead
+    - capability: impl
+      agentSpecRef:
+        name: remediation-engineer
+    - capability: eval
+      agentSpecRef:
+        name: vulnerability-analyst
+    - capability: review
+      agentSpecRef:
+        name: security-lead
+    - capability: infra
+      agentSpecRef:
+        name: remediation-engineer
+
+  fallbackAgentSpecRef:
+    name: security-lead
+
+  messaging:
+    type: mailbox
+    mailboxPattern: "{agentSpec}-mailbox"

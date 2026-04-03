@@ -1,0 +1,219 @@
+---
+# ModelConfig: Claude Sonnet for analysis tasks
+apiVersion: karo.dev/v1alpha1
+kind: ModelConfig
+metadata:
+  name: claude-sonnet
+  namespace: incident-review
+spec:
+  provider: anthropic
+  name: claude-sonnet-4-20250514
+  apiKeySecret:
+    name: anthropic-api-key
+    key: ANTHROPIC_API_KEY
+  parameters:
+    maxTokens: 8192
+    temperature: 0.1         # Low temperature for accurate analysis
+---
+# ModelConfig: Claude Opus for summary writing
+apiVersion: karo.dev/v1alpha1
+kind: ModelConfig
+metadata:
+  name: claude-opus
+  namespace: incident-review
+spec:
+  provider: anthropic
+  name: claude-opus-4-20250514
+  apiKeySecret:
+    name: anthropic-api-key
+    key: ANTHROPIC_API_KEY
+  parameters:
+    maxTokens: 16384
+    temperature: 0.2
+---
+# SandboxClass: restricted to Jira and Confluence APIs
+apiVersion: karo.dev/v1alpha1
+kind: SandboxClass
+metadata:
+  name: incident-review-sandbox
+  namespace: incident-review
+spec:
+  runtimeClassName: gvisor
+  networkPolicy:
+    egress: restricted
+    allowedDomains:
+      - "*.atlassian.net"
+      - "*.jira.com"
+    allowedCIDRs:
+      - "10.0.0.0/8"
+  filesystem:
+    readOnlyRootFilesystem: false
+    allowedMounts:
+      - /tmp
+      - /workspace
+  resourceLimits:
+    cpu: "2"
+    memory: "4Gi"
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    allowPrivilegeEscalation: false
+    seccompProfile:
+      type: RuntimeDefault
+    capabilities:
+      drop:
+        - ALL
+---
+# MemoryStore: incident review history
+apiVersion: karo.dev/v1alpha1
+kind: MemoryStore
+metadata:
+  name: incident-review-memory
+  namespace: incident-review
+spec:
+  backend:
+    type: mem0
+    mem0:
+      apiKeySecret:
+        name: mem0-api-key
+        key: API_KEY
+      organizationId: "platform-org"
+      projectId: "incident-review"
+  scope: team
+  retentionDays: 730         # 2 years of incident history
+  maxMemories: 50000
+  categories:
+    - incident-summary
+    - follow-up-items
+    - trend-analysis
+    - recurring-issues
+    - weekly-report
+---
+# ToolSet: Jira and Confluence tools
+apiVersion: karo.dev/v1alpha1
+kind: ToolSet
+metadata:
+  name: incident-review-tools
+  namespace: incident-review
+spec:
+  tools:
+    - name: jira
+      type: mcp
+      transport: streamable-http
+      endpoint: "http://jira-mcp-server.incident-review.svc:8080"
+      permissions:
+        - read
+        - search
+        - comment
+        - transition
+      credentialSecret:
+        name: jira-mcp-credentials
+        key: JIRA_TOKEN
+
+    - name: confluence
+      type: mcp
+      transport: streamable-http
+      endpoint: "http://confluence-mcp-server.incident-review.svc:8080"
+      permissions:
+        - read
+        - write
+      credentialSecret:
+        name: confluence-mcp-credentials
+        key: CONFLUENCE_TOKEN
+
+    - name: code-executor
+      type: mcp
+      transport: stdio
+      command: ["/usr/local/bin/code-exec-mcp"]
+      permissions:
+        - execute
+      sandboxRequired: true
+
+  policyRef:
+    name: incident-review-policy
+---
+# AgentPolicy: governance for incident review
+apiVersion: karo.dev/v1alpha1
+kind: AgentPolicy
+metadata:
+  name: incident-review-policy
+  namespace: incident-review
+spec:
+  targetSelector:
+    matchLabels:
+      team: incident-review
+
+  models:
+    allowedProviders:
+      - anthropic
+    requireMinContextWindow: 100000
+
+  toolCalls:
+    maxPerMinute: 120
+    maxPerLoop: 1000
+    requireSandboxForExecute: true
+
+  loop:
+    maxIterationsPerRun: 150
+    maxRunDurationMinutes: 180
+    requireHumanApprovalAfterIterations: 100
+
+  taskGraph:
+    allowMutation: true
+    mutationScope:
+      - addTask
+      - closeTask
+    denyMutation:
+      - deleteTask
+    requireAuditTrail: true
+
+  audit:
+    enabled: true
+    logLevel: Full
+    logDestination:
+      type: stdout
+    retentionDays: 365
+
+  dataClassification:
+    allowedLevels:
+      - internal
+      - confidential
+    denyPatterns:
+      - ".*password.*"
+      - ".*secret.*"
+      - ".*private.?key.*"
+
+  escalation:
+    onPolicyViolation: Block
+---
+# EvalSuite: quality gates for incident analysis
+apiVersion: karo.dev/v1alpha1
+kind: EvalSuite
+metadata:
+  name: incident-review-evals
+  namespace: incident-review
+spec:
+  agentSpecRef:
+    name: incident-analyst
+  evalCases:
+    - id: analysis-complete
+      description: "Each incident has a complete analysis summary"
+      assertions:
+        - type: llm-judge
+          criteria: "The analysis includes: incident description, root cause or contributing factors, impact assessment, and timeline of events"
+          judgeModelConfigRef:
+            name: claude-sonnet
+    - id: follow-ups-actionable
+      description: "Follow-up items are specific and actionable"
+      assertions:
+        - type: llm-judge
+          criteria: "Each follow-up item has a clear action, an owner or team assignment suggestion, and a priority level"
+          judgeModelConfigRef:
+            name: claude-sonnet
+    - id: trends-identified
+      description: "Cross-incident trends are identified when patterns exist"
+      assertions:
+        - type: llm-judge
+          criteria: "The weekly report identifies any recurring patterns, common root causes, or systemic issues across the week's incidents"
+          judgeModelConfigRef:
+            name: claude-sonnet
