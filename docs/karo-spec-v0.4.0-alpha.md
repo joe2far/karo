@@ -4055,19 +4055,19 @@ karo/
 
 ## Reference Agent Harnesses
 
-KARO is harness-agnostic — any agent framework that supports MCP tool calling works as the agent process inside a pod. For v1alpha1, KARO ships **two reference harnesses** so users can choose the best fit:
+KARO is harness-agnostic — any agent framework that supports MCP tool calling works as the agent process inside a pod. For v1alpha1, KARO ships **three reference harnesses** so users can choose the best fit:
 
-| | **Goose** | **Claude Code** |
-|---|---|---|
-| **Best for** | Model-agnostic teams, multi-provider setups | Maximum agent capability, Anthropic-first teams |
-| **Models** | Any (25+ providers) | Anthropic models (direct API, Bedrock, Vertex AI) |
-| **License** | Apache 2.0 (AAIF/Linux Foundation) | Proprietary (Anthropic) |
-| **MCP** | Native extension system | Native MCP support with Tool Search |
-| **Headless** | `goose run -t "task" --no-session` | `claude -p "task" --allowedTools ...` |
-| **Autonomous** | `GOOSE_MODE=auto` | Auto Mode (AI classifier for safe execution) |
-| **Config files** | AGENTS.md (native) | CLAUDE.md (native), AGENTS.md (supported) |
-| **Language** | Rust | Node.js (TypeScript) |
-| **Container** | `karo-goose-harness` | `karo-claude-code-harness` |
+| | **Goose** | **Claude Code** | **Claw Code** |
+|---|---|---|---|
+| **Best for** | Model-agnostic teams, multi-provider setups | Maximum agent capability, Anthropic-first teams | Lightweight Rust alternative for Anthropic models |
+| **Models** | Any (25+ providers) | Anthropic models (direct API, Bedrock, Vertex AI) | Anthropic models (direct API, OAuth) |
+| **License** | Apache 2.0 (AAIF/Linux Foundation) | Proprietary (Anthropic) | MIT |
+| **MCP** | Native extension system | Native MCP support with Tool Search | MCP stdio bootstrap (MVP) |
+| **Headless** | `goose run -t "task" --no-session` | `claude -p "task" --allowedTools ...` | `claw -p "task" --allowedTools ...` |
+| **Autonomous** | `GOOSE_MODE=auto` | Auto Mode (AI classifier for safe execution) | DangerFullAccess (default permission mode) |
+| **Config files** | AGENTS.md (native) | CLAUDE.md (native), AGENTS.md (supported) | CLAW.md (native), CLAUDE.md (compatible) |
+| **Language** | Rust | Node.js (TypeScript) | Rust (92.9%), Python (7.1%) |
+| **Container** | `karo-goose-harness` | `karo-claude-code-harness` | `karo-claw-code-harness` |
 
 ### Why Goose
 
@@ -4344,7 +4344,135 @@ done
 }
 ```
 
-### Choosing Between Goose and Claude Code
+### Why Claw Code
+
+[Claw Code](https://github.com/ultraworkers/claw-code) is an MIT-licensed, clean-room Rust reimplementation of Claude Code. It provides a lightweight, open-source alternative for teams that want Claude Code's CLI interface with the benefits of a native Rust binary.
+
+Claw Code is the right choice when:
+
+- **Open source + Anthropic models** — MIT licensed, unlike the proprietary Claude Code, while still targeting Anthropic's API. For teams that need source-level control over their agent harness
+- **Rust binary** — compiled Rust binary (~10MB) vs Claude Code's Node.js runtime (~200MB+). Faster cold start, smaller container image, lower memory footprint — critical for scale-to-zero `startPolicy: OnDemand` agents
+- **Claude Code CLI compatibility** — mirrors Claude Code's `-p` prompt mode, `--allowedTools`, `--max-turns`, and `--output-format` flags. Drop-in replacement for headless execution patterns
+- **MCP stdio support** — connects to `agent-runtime-mcp` sidecar via the same `.claw.json` config (equivalent to `.mcp.json`)
+- **CLAW.md native support** — reads project guidance files automatically, with automatic `CLAUDE.md` → `CLAW.md` compatibility symlink in the harness bootstrap
+- **No Node.js dependency** — pure Rust runtime eliminates the Node.js/npm supply chain. Simpler security posture for hardened environments
+- **Active development** — 162k+ GitHub stars, Cargo workspace with crates for `api-client`, `runtime`, `tools`, `commands`, `plugins`, `compat-harness`, and `claw-cli`
+
+**Current limitations** (MVP stage):
+- MCP support is basic stdio bootstrap only — no remote transport or MCP management CLI
+- Hooks execution pipelines (PreToolUse/PostToolUse) are not yet implemented
+- Skills/plugins system is incomplete — no bundled registry or marketplace
+- No Auto Mode equivalent — uses `DangerFullAccess` default permission mode (acceptable in sandboxed KARO pods)
+
+### Claw Code Integration Architecture
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  AgentInstance Pod                                        │
+│                                                          │
+│  ┌────────────────────┐    ┌───────────────────────────┐ │
+│  │  Claw Code          │    │  agent-runtime-mcp        │ │
+│  │  (headless -p mode) │    │  (MCP sidecar)             │ │
+│  │                     │◄──►│                           │ │
+│  │  Config:            │MCP │  Registered as Claw       │ │
+│  │  - ANTHROPIC_API_KEY│    │  Code MCP server via      │ │
+│  │    env var          │    │  .claw.json               │ │
+│  │  - CLAW.md from     │    │                           │ │
+│  │    agentConfigFiles │    │  Provides:                │ │
+│  │  - .claw.json with  │    │  - karo_poll_mailbox      │ │
+│  │    agent-runtime-mcp│    │  - karo_complete_task     │ │
+│  │  - --max-turns      │    │  - karo_add_task          │ │
+│  │  - DangerFullAccess │    │  - karo_query_memory      │ │
+│  │    permission mode  │    │  - etc.                   │ │
+│  └────────────────────┘    └───────────────────────────┘ │
+└──────────────────────────────────────────────────────────┘
+```
+
+### Container Image: `karo-claw-code-harness`
+
+```dockerfile
+# Build stage: compile claw-cli from source
+FROM rust:1.82-slim AS builder
+RUN apt-get update && apt-get install -y --no-install-recommends git pkg-config libssl-dev
+WORKDIR /build
+RUN git clone --depth 1 https://github.com/ultraworkers/claw-code.git .
+WORKDIR /build/rust
+RUN cargo build --release --package claw-cli && \
+    cp target/release/claw /usr/local/bin/claw
+
+# Runtime stage
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl gettext-base git
+COPY --from=builder /usr/local/bin/claw /usr/local/bin/claw
+COPY bootstrap-claw-code.sh /usr/local/bin/karo-bootstrap
+COPY .claw.json.template /etc/karo/mcp-template.json
+ENTRYPOINT ["/usr/local/bin/karo-bootstrap"]
+```
+
+### Claw Code Bootstrap
+
+```bash
+#!/bin/bash
+set -euo pipefail
+
+# 1. Configure model provider from KARO ModelConfig env vars
+# Claw Code reads ANTHROPIC_API_KEY natively via its api-client crate.
+# Map KARO model name to Claw Code's CLAW_MODEL env var.
+export CLAW_MODEL="${KARO_MODEL_NAME:-}"
+
+# 2. Generate .claw.json with agent-runtime-mcp sidecar
+cat /etc/karo/mcp-template.json | envsubst > /workspace/.claw.json
+
+# 3. Symlink CLAUDE.md → CLAW.md for compatibility (if needed)
+if [ -f /workspace/CLAUDE.md ] && [ ! -f /workspace/CLAW.md ]; then
+  ln -s /workspace/CLAUDE.md /workspace/CLAW.md
+fi
+
+# 4. Agent loop
+while true; do
+  MESSAGES=$(claw -p "Call karo_poll_mailbox with limit 1. If no messages, respond ONLY with the word EMPTY." \
+    --allowedTools "mcp__agent-runtime-mcp__karo_poll_mailbox" \
+    --max-turns 2 --output-format text 2>/dev/null || echo "EMPTY")
+
+  if echo "$MESSAGES" | grep -q "EMPTY"; then
+    sleep "${KARO_POLL_INTERVAL:-10}"
+    continue
+  fi
+
+  TASK_PROMPT=$(karo-build-task-prompt "$MESSAGES")
+
+  claw -p "$TASK_PROMPT" \
+    --allowedTools "mcp__agent-runtime-mcp__*,Read,Edit,Write,Bash,Search,Glob,Grep" \
+    --max-turns "${KARO_MAX_TURNS:-50}" \
+    --append-system-prompt "$(cat /workspace/SOUL.md 2>/dev/null || true)" \
+    --output-format text
+
+  claw -p "Call karo_report_status with status 'idle'." \
+    --allowedTools "mcp__agent-runtime-mcp__karo_report_status" \
+    --max-turns 2
+done
+```
+
+### Claw Code `.claw.json` Template
+
+```json
+{
+  "mcpServers": {
+    "agent-runtime-mcp": {
+      "type": "stdio",
+      "command": "/usr/local/bin/agent-runtime-mcp",
+      "env": {
+        "KARO_NAMESPACE": "${KARO_NAMESPACE}",
+        "KARO_AGENT_INSTANCE": "${KARO_AGENT_INSTANCE}",
+        "KARO_AGENT_SPEC": "${KARO_AGENT_SPEC}",
+        "KARO_MAILBOX": "${KARO_MAILBOX}"
+      }
+    }
+  }
+}
+```
+
+### Choosing Between Goose, Claude Code, and Claw Code
 
 Use **Goose** when:
 - You need model flexibility (switch between Anthropic, OpenAI, Ollama, etc.)
@@ -4359,7 +4487,15 @@ Use **Claude Code** when:
 - You're already using Claude Code in your development workflow
 - Your tasks involve complex multi-file coding that benefits from Claude's deeper tool integration
 
-Both harnesses can be used simultaneously within the same KARO cluster — different AgentSpecs can reference different `runtime.image` values. A design team might use Claude Code for its superior reasoning, while a test automation team uses Goose with a cost-optimized model.
+Use **Claw Code** when:
+- You want an open-source (MIT) harness targeting Anthropic models specifically
+- You need the smallest possible container image (Rust binary, no Node.js)
+- You want source-level control and auditability over your agent harness
+- You're in a hardened environment that restricts Node.js/npm supply chains
+- You want Claude Code CLI compatibility without the proprietary license
+- You need fast cold start for scale-to-zero `startPolicy: OnDemand` agents
+
+All three harnesses can be used simultaneously within the same KARO cluster — different AgentSpecs can reference different `runtime.image` values. A design team might use Claude Code for its superior reasoning, a test automation team uses Goose with a cost-optimized model, and a security-conscious team uses Claw Code for its auditable Rust binary.
 
 ### Other Compatible Harnesses
 
