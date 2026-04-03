@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "agent-runtime-mcp": {
+      "type": "stdio",
+      "command": "/usr/local/bin/agent-runtime-mcp",
+      "env": {
+        "KARO_NAMESPACE": "${KARO_NAMESPACE}",
+        "KARO_AGENT_INSTANCE": "${KARO_AGENT_INSTANCE}",
+        "KARO_AGENT_SPEC": "${KARO_AGENT_SPEC}",
+        "KARO_MAILBOX": "${KARO_MAILBOX}"
+      }
+    }
+  }
+}

@@ -1,0 +1,55 @@
+apiVersion: karo.dev/v1alpha1
+kind: AgentSpec
+metadata:
+  name: claw-coder-agent
+  namespace: team-alpha
+spec:
+  modelConfigRef:
+    name: claude-sonnet-direct
+  systemPrompt:
+    configMapRef:
+      name: claw-coder-agent-prompt
+      key: prompt.txt
+  capabilities:
+    - name: impl
+      skillPrompt: |
+        You are an implementation agent. Write clean, tested code
+        that follows the project's existing patterns.
+      requiredTools:
+        - agent-runtime-mcp
+  agentConfigFiles:
+    - name: claw-md
+      mountPath: /workspace/CLAW.md
+      source:
+        configMapRef:
+          name: claw-coder-agent-config
+          key: CLAW.md
+    - name: soul
+      mountPath: /workspace/SOUL.md
+      source:
+        configMapRef:
+          name: claw-coder-agent-config
+          key: SOUL.md
+  memoryRef:
+    name: team-shared-memory
+  toolSetRef:
+    name: alpha-permitted-tools
+  sandboxClassRef:
+    name: alpha-restricted
+  runtime:
+    image: ghcr.io/karo-dev/karo-claw-code-harness:latest
+    resources:
+      requests:
+        cpu: "250m"
+        memory: "512Mi"
+      limits:
+        cpu: "1"
+        memory: "2Gi"
+  maxContextTokens: 200000
+  onContextExhaustion: restart
+  dispatchable: true
+  scaling:
+    minInstances: 0
+    maxInstances: 5
+    startPolicy: OnDemand
+    cooldownSeconds: 300
