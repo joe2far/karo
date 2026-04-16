@@ -1,0 +1,222 @@
+---
+# Backlog Lead: orchestrator. Plans the weekly review, decides which tickets
+# to surface, composes the final Slack summary, and decides transitions.
+apiVersion: karo.dev/v1alpha1
+kind: AgentSpec
+metadata:
+  name: backlog-lead
+  namespace: backlog-review-team
+  labels:
+    team: backlog-review
+    role: orchestrator
+spec:
+  modelConfigRef:
+    name: claude-sonnet
+  systemPrompt:
+    inline: |
+      You are the Backlog Lead for a product engineering org. Each week you
+      run a backlog review for exactly one team at a time (Team A, Team B,
+      or Team C). The team in scope is provided in the loop prompt along
+      with the Jira JQL queries and the Slack channel to post to.
+
+      Your responsibilities:
+      1. Pull the team's backlog via the jira MCP using ONLY the JQL queries
+         passed in the loop prompt. Never invent JQL. Never query another
+         team's project/label.
+      2. Fetch the story template, epic template, and refinement-process
+         playbook from the refinement-templates MCP.
+      3. Plan the review as a TaskGraph: triage, per-ticket shape checks,
+         dependency audit, recommendations, final summary.
+      4. Delegate ticket-level work to refinement-analyst and story-writer
+         via capability routing (impl = analysis, design = writing).
+      5. Compose the final weekly summary and post it to the team's Slack
+         channel via the slack MCP. The channel ID is in the loop prompt.
+      6. Record a snapshot of this week's backlog in team memory so next
+         week's run can compute deltas.
+
+      Hard rules:
+        - You only write to Jira via issue.comment. Never edit bodies.
+        - Transitions to "Ready for Dev" require a recommendation in the
+          Slack summary, not an automatic Jira transition.
+        - Every recommendation must cite specific Jira issue keys.
+        - If the loop prompt is missing a team key, JQL, or Slack channel,
+          halt and emit an approval task - do not guess.
+  capabilities:
+    - name: design
+      skillPrompt:
+        inline: |
+          Plan the weekly review for the team named in the loop prompt:
+          1. Enumerate the JQL queries to run.
+          2. Decide the top-N tickets to inspect (default N=15, top of rank).
+          3. Create subtasks: one impl task per ticket for template scoring,
+             one design task for the summary, one review task for QA.
+          4. Set acceptance criteria that require Jira keys in every output.
+    - name: review
+      skillPrompt:
+        inline: |
+          Review the draft weekly summary for:
+            - Every recommendation cites a Jira issue key.
+            - Every "stuck" item has a stage, age-in-stage, and blocker.
+            - The template-compliance table lists the top-N tickets scored.
+            - The summary length is under 600 words (Slack-friendly).
+  memoryRef:
+    name: backlog-memory
+  toolSetRef:
+    name: backlog-tools
+  sandboxClassRef:
+    name: backlog-sandbox
+  runtime:
+    image: ghcr.io/karo-dev/karo-claude-code-harness:latest
+    resources:
+      requests:
+        cpu: "250m"
+        memory: "512Mi"
+      limits:
+        cpu: "1"
+        memory: "2Gi"
+  maxContextTokens: 200000
+  onContextExhaustion: checkpoint
+  dispatchable: true
+  scaling:
+    minInstances: 0
+    maxInstances: 3         # At most one per team in flight at once
+    startPolicy: OnDemand
+    cooldownSeconds: 300
+---
+# Refinement Analyst: executor. Takes a single Jira ticket and scores it
+# against the story/epic template and the refinement process.
+apiVersion: karo.dev/v1alpha1
+kind: AgentSpec
+metadata:
+  name: refinement-analyst
+  namespace: backlog-review-team
+  labels:
+    team: backlog-review
+    role: executor
+spec:
+  modelConfigRef:
+    name: claude-sonnet
+  systemPrompt:
+    inline: |
+      You are a refinement analyst. You take one Jira ticket at a time and
+      answer the question: "Is this ticket ready for development, and if
+      not, what is missing?"
+
+      For every ticket you receive:
+      1. Fetch it via the jira MCP (issue.read), including comments and
+         linked issues.
+      2. Fetch the story-template or epic-template and refinement-process
+         from the refinement-templates MCP.
+      3. Walk every stage of the process in order. Record per-stage pass /
+         fail / missing-fields.
+      4. Produce a structured finding:
+           - issueKey
+           - type (Story | Epic | Task | Bug)
+           - currentStage (Triage | Shape | Slice | Dependencies | DoD |
+             Ready)
+           - blockers: list of specific missing fields
+           - suggestedActions: concrete edits the owner should make
+           - suggestedSplit: if the story is too large, propose child stories
+             (titles + one-line user-story sentences)
+      5. If you find genuinely missing information that only a human can
+         supply, append a Jira comment summarising the gaps. Be specific:
+         quote the template section by name.
+
+      Never invent Jira fields. Never transition tickets. Never modify the
+      issue body. Only issue.comment is allowed.
+  capabilities:
+    - name: impl
+      skillPrompt:
+        inline: |
+          Score one Jira ticket against the refinement template. Emit a
+          structured finding and, if gaps exist, a single Jira comment
+          listing them. Always include the issue key in your output.
+      requiredTools:
+        - jira
+        - refinement-templates
+  memoryRef:
+    name: backlog-memory
+  toolSetRef:
+    name: backlog-tools
+  sandboxClassRef:
+    name: backlog-sandbox
+  runtime:
+    image: ghcr.io/karo-dev/karo-claude-code-harness:latest
+    resources:
+      requests:
+        cpu: "250m"
+        memory: "512Mi"
+      limits:
+        cpu: "1"
+        memory: "2Gi"
+  maxContextTokens: 200000
+  onContextExhaustion: restart
+  dispatchable: true
+  scaling:
+    minInstances: 0
+    maxInstances: 6        # Parallelise per-ticket scoring
+    startPolicy: OnDemand
+    cooldownSeconds: 300
+---
+# Story Writer: executor. Given an under-specified ticket, drafts the
+# missing fields (user-story sentence, acceptance criteria, rollout plan)
+# and posts them as a Jira comment for the human owner to accept.
+apiVersion: karo.dev/v1alpha1
+kind: AgentSpec
+metadata:
+  name: story-writer
+  namespace: backlog-review-team
+  labels:
+    team: backlog-review
+    role: executor
+spec:
+  modelConfigRef:
+    name: claude-sonnet
+  systemPrompt:
+    inline: |
+      You are a technical writer who drafts Jira story and epic content in
+      the house style defined by the story-template and epic-template.
+
+      When assigned to a ticket:
+      1. Read the ticket and any linked parent epic.
+      2. Draft the missing sections per the template. Use the exact headings
+         from the template so downstream tooling can parse them.
+      3. Where information is genuinely unknown (e.g. the north-star metric
+           for an epic), write a placeholder line prefixed with `TBD:`
+           followed by the specific question that needs answering.
+      4. Post the draft as a Jira comment. Do NOT modify the issue body.
+      5. Return a short summary (<=150 words) describing what you drafted
+         and which TBDs remain.
+  capabilities:
+    - name: design
+      skillPrompt:
+        inline: |
+          Draft the missing sections of a Jira story or epic in the house
+          style. Post as a comment. Flag unknowns as TBDs with a specific
+          question each.
+      requiredTools:
+        - jira
+        - refinement-templates
+  memoryRef:
+    name: backlog-memory
+  toolSetRef:
+    name: backlog-tools
+  sandboxClassRef:
+    name: backlog-sandbox
+  runtime:
+    image: ghcr.io/karo-dev/karo-claude-code-harness:latest
+    resources:
+      requests:
+        cpu: "250m"
+        memory: "512Mi"
+      limits:
+        cpu: "1"
+        memory: "2Gi"
+  maxContextTokens: 200000
+  onContextExhaustion: restart
+  dispatchable: true
+  scaling:
+    minInstances: 0
+    maxInstances: 3
+    startPolicy: OnDemand
+    cooldownSeconds: 300

@@ -1,0 +1,71 @@
+---
+# Agent Team: backlog-review team binding. One team of agents reviews the
+# backlogs of multiple subject teams (team-a, team-b, team-c). Per-team
+# behaviour is controlled by per-team AgentLoops (see 07-loops-channels.yaml).
+apiVersion: karo.dev/v1alpha1
+kind: AgentTeam
+metadata:
+  name: backlog-review-team
+  namespace: backlog-review-team
+spec:
+  description: "Weekly backlog review & refinement assistant for subject teams team-a, team-b, team-c"
+
+  agents:
+    - agentSpecRef:
+        name: backlog-lead
+      role: orchestrator
+    - agentSpecRef:
+        name: refinement-analyst
+      role: executor
+    - agentSpecRef:
+        name: story-writer
+      role: executor
+
+  sharedResources:
+    memoryRef:
+      name: backlog-memory
+    toolSetRef:
+      name: backlog-tools
+    sandboxClassRef:
+      name: backlog-sandbox
+    modelConfigRef:
+      name: claude-sonnet
+
+  dispatcherRef:
+    name: backlog-router
+
+  policyRef:
+    name: backlog-policy
+---
+# Dispatcher: routes by capability. design -> lead for planning / summary,
+# design -> story-writer for drafting (overridden per-task via requiredTools),
+# impl -> refinement-analyst, review -> lead.
+apiVersion: karo.dev/v1alpha1
+kind: Dispatcher
+metadata:
+  name: backlog-router
+  namespace: backlog-review-team
+spec:
+  mode: capability
+
+  taskGraphSelector:
+    matchLabels:
+      team: backlog-review
+
+  capabilityRoutes:
+    - capability: design
+      agentSpecRef:
+        name: backlog-lead
+    - capability: impl
+      agentSpecRef:
+        name: refinement-analyst
+    - capability: review
+      agentSpecRef:
+        name: backlog-lead
+
+  fallbackAgentSpecRef:
+    name: backlog-lead
+
+  messaging:
+    type: mailbox
+    mailboxPattern: "{agentSpec}-mailbox"
