@@ -1,0 +1,211 @@
+---
+# ModelConfig: Claude Sonnet for backlog review and refinement tasks
+apiVersion: karo.dev/v1alpha1
+kind: ModelConfig
+metadata:
+  name: claude-sonnet
+  namespace: backlog-review-team
+spec:
+  provider: anthropic
+  name: claude-sonnet-4-20250514
+  apiKeySecret:
+    name: anthropic-api-key
+    key: ANTHROPIC_API_KEY
+  parameters:
+    maxTokens: 8192
+    temperature: 0.2          # Low-ish temperature: deterministic refinement suggestions
+---
+# SandboxClass: restricted egress. Only Atlassian + Slack APIs are reachable.
+apiVersion: karo.dev/v1alpha1
+kind: SandboxClass
+metadata:
+  name: backlog-sandbox
+  namespace: backlog-review-team
+spec:
+  runtimeClassName: gvisor
+  networkPolicy:
+    egress: restricted
+    allowedDomains:
+      - "*.atlassian.net"
+      - "api.atlassian.com"
+      - "slack.com"
+      - "*.slack.com"
+  filesystem:
+    readOnlyRootFilesystem: false
+    allowedMounts:
+      - /tmp
+      - /workspace
+  resourceLimits:
+    cpu: "1"
+    memory: "2Gi"
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    allowPrivilegeEscalation: false
+    seccompProfile:
+      type: RuntimeDefault
+    capabilities:
+      drop:
+        - ALL
+---
+# MemoryStore: cross-week institutional knowledge about each team's backlog.
+# Stores "last week's state" so the agent can reason about deltas week over week.
+apiVersion: karo.dev/v1alpha1
+kind: MemoryStore
+metadata:
+  name: backlog-memory
+  namespace: backlog-review-team
+spec:
+  backend:
+    type: mem0
+    mem0:
+      apiKeySecret:
+        name: mem0-api-key
+        key: API_KEY
+      organizationId: "backlog-review-org"
+      projectId: "backlog-review"
+  scope: team
+  retentionDays: 365
+  maxMemories: 20000
+  categories:
+    - team-a-backlog-snapshot
+    - team-b-backlog-snapshot
+    - team-c-backlog-snapshot
+    - refinement-decisions
+    - story-template-violations
+    - prior-recommendations
+    - epic-health
+---
+# ToolSet: Jira MCP (sync/query backlog) + Slack MCP (post updates) + a
+# shared "refinement-template" MCP exposing templates and checklists.
+apiVersion: karo.dev/v1alpha1
+kind: ToolSet
+metadata:
+  name: backlog-tools
+  namespace: backlog-review-team
+spec:
+  tools:
+    - name: jira
+      type: mcp
+      transport: streamable-http
+      endpoint: "http://jira-mcp.backlog-review-team.svc:8080"
+      permissions:
+        - search          # Run JQL queries
+        - issue.read      # Fetch issue fields, comments, links
+        - issue.comment   # Append refinement notes (comments only, never body)
+        - issue.transition
+      credentialSecret:
+        name: jira-mcp-credentials
+        key: JIRA_API_TOKEN
+
+    - name: slack
+      type: mcp
+      transport: streamable-http
+      endpoint: "http://slack-mcp.backlog-review-team.svc:8080"
+      permissions:
+        - chat.postMessage
+        - chat.postEphemeral
+        - conversations.history
+      credentialSecret:
+        name: slack-mcp-credentials
+        key: SLACK_BOT_TOKEN
+
+    # In-cluster MCP server that serves static refinement checklists,
+    # story/epic templates, and the team-specific JQL queries mounted from
+    # the ConfigMaps in 03-configmaps.yaml.
+    - name: refinement-templates
+      type: mcp
+      transport: streamable-http
+      endpoint: "http://refinement-templates-mcp.backlog-review-team.svc:8080"
+      permissions:
+        - template.read
+        - checklist.read
+        - jql.read
+
+  policyRef:
+    name: backlog-policy
+---
+# AgentPolicy: read-first by default. Writes to Jira are limited to comments,
+# and never modify issue bodies or transitions without an approval gate.
+apiVersion: karo.dev/v1alpha1
+kind: AgentPolicy
+metadata:
+  name: backlog-policy
+  namespace: backlog-review-team
+spec:
+  targetSelector:
+    matchLabels:
+      team: backlog-review
+
+  models:
+    allowedProviders:
+      - anthropic
+
+  toolCalls:
+    maxPerMinute: 60
+    maxPerLoop: 500
+
+  loop:
+    maxIterationsPerRun: 50
+    maxRunDurationMinutes: 60   # Weekly review should finish inside an hour
+
+  taskGraph:
+    allowMutation: true
+    mutationScope:
+      - addTask                 # Allow the lead to add per-ticket refinement subtasks
+      - closeTask
+    requireAuditTrail: true
+
+  audit:
+    enabled: true
+    logLevel: Full
+    logDestination:
+      type: stdout
+    retentionDays: 365
+
+  escalation:
+    onPolicyViolation: Warn
+---
+# EvalSuite: quality gates for the weekly summary posted to Slack.
+apiVersion: karo.dev/v1alpha1
+kind: EvalSuite
+metadata:
+  name: backlog-evals
+  namespace: backlog-review-team
+spec:
+  agentSpecRef:
+    name: backlog-lead
+  evalCases:
+    - id: summary-cites-issues
+      description: "Weekly summary references specific Jira issue keys"
+      assertions:
+        - type: llm-judge
+          criteria: "The summary references specific Jira issue keys (e.g. ABC-123) for every recommendation or status change"
+          judgeModelConfigRef:
+            name: claude-sonnet
+
+    - id: recommendations-actionable
+      description: "Each recommendation is actionable and has an owner"
+      assertions:
+        - type: llm-judge
+          criteria: "Every recommendation in the summary is phrased as a concrete next step and identifies an owner (team, role, or unassigned)"
+          judgeModelConfigRef:
+            name: claude-sonnet
+
+    - id: template-compliance-scored
+      description: "Summary scores backlog items against the refinement template"
+      assertions:
+        - type: contains
+          value: "Template compliance"
+        - type: llm-judge
+          criteria: "The summary reports, per story/epic, which refinement-template fields are present, missing, or deficient"
+          judgeModelConfigRef:
+            name: claude-sonnet
+
+    - id: no-destructive-jira-ops
+      description: "Summary never describes deleting issues or overriding existing fields"
+      assertions:
+        - type: not-contains
+          value: "Deleted issue"
+        - type: not-contains
+          value: "Overwrote description"

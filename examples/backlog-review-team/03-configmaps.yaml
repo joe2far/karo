@@ -1,0 +1,295 @@
+---
+# Per-team JQL queries. Each team has its own ConfigMap so ownership is clear
+# and queries can be edited without touching other teams' configuration. The
+# refinement-templates MCP server reads these and exposes them via jql.read.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: team-a-jql
+  namespace: backlog-review-team
+  labels:
+    team: backlog-review
+    subject-team: team-a
+data:
+  team.yaml: |
+    teamKey: team-a
+    displayName: "Team A (Platform)"
+    slackChannelId: "C0TEAM-A-BACKLOG"
+    # Only pull tickets sitting in Team A's backlog. Excludes anything already
+    # in progress, done, or owned by another team.
+    jqlQueries:
+      backlog: >
+        project = "PLAT"
+        AND issuetype in (Story, Epic, Task, Bug)
+        AND status in ("Backlog", "Open", "To Do")
+        AND "Team[Dropdown]" = "Team A"
+        AND resolution = Unresolved
+        ORDER BY Rank ASC
+      refinementReady: >
+        project = "PLAT"
+        AND "Team[Dropdown]" = "Team A"
+        AND status = "Refinement"
+        ORDER BY updated DESC
+      epicsInFlight: >
+        project = "PLAT"
+        AND issuetype = Epic
+        AND "Team[Dropdown]" = "Team A"
+        AND status in ("In Progress", "Refinement")
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: team-b-jql
+  namespace: backlog-review-team
+  labels:
+    team: backlog-review
+    subject-team: team-b
+data:
+  team.yaml: |
+    teamKey: team-b
+    displayName: "Team B (Payments)"
+    slackChannelId: "C0TEAM-B-BACKLOG"
+    jqlQueries:
+      backlog: >
+        project = "PAY"
+        AND issuetype in (Story, Epic, Task, Bug)
+        AND status in ("Backlog", "Open", "To Do")
+        AND "Team[Dropdown]" = "Team B"
+        AND resolution = Unresolved
+        ORDER BY Rank ASC
+      refinementReady: >
+        project = "PAY"
+        AND "Team[Dropdown]" = "Team B"
+        AND status = "Refinement"
+        ORDER BY updated DESC
+      epicsInFlight: >
+        project = "PAY"
+        AND issuetype = Epic
+        AND "Team[Dropdown]" = "Team B"
+        AND status in ("In Progress", "Refinement")
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: team-c-jql
+  namespace: backlog-review-team
+  labels:
+    team: backlog-review
+    subject-team: team-c
+data:
+  team.yaml: |
+    teamKey: team-c
+    displayName: "Team C (Growth)"
+    slackChannelId: "C0TEAM-C-BACKLOG"
+    jqlQueries:
+      backlog: >
+        project = "GRW"
+        AND issuetype in (Story, Epic, Task, Bug)
+        AND status in ("Backlog", "Open", "To Do")
+        AND "Team[Dropdown]" = "Team C"
+        AND resolution = Unresolved
+        ORDER BY Rank ASC
+      refinementReady: >
+        project = "GRW"
+        AND "Team[Dropdown]" = "Team C"
+        AND status = "Refinement"
+        ORDER BY updated DESC
+      epicsInFlight: >
+        project = "GRW"
+        AND issuetype = Epic
+        AND "Team[Dropdown]" = "Team C"
+        AND status in ("In Progress", "Refinement")
+---
+# Shared story template. Agents compare every story in the backlog to this
+# template and report deficiencies. The refinement-templates MCP server mounts
+# this ConfigMap and exposes it via template.read.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: story-template
+  namespace: backlog-review-team
+data:
+  story.md: |
+    # Story Template
+
+    A story is ready for development when every section below is filled in,
+    unambiguous, and independently verifiable.
+
+    ## Title
+    `<Role/Actor> - <Capability> - <Outcome>`
+    Example: `Checkout user - one-click reorder - repeat purchase in <3s`
+
+    ## User Story
+    ```
+    As a <role>,
+    I want <capability>,
+    so that <measurable outcome>.
+    ```
+
+    ## Context / Why
+    One paragraph linking this story to the parent Epic and the business
+    hypothesis or customer pain. Link the Epic key explicitly.
+
+    ## Scope
+    **In scope:** bullet list of behaviours included.
+    **Out of scope:** bullet list of adjacent behaviours deliberately excluded.
+
+    ## Acceptance Criteria
+    Written in Given / When / Then. Every criterion must be:
+      - Independently testable (no AND / OR compound steps).
+      - Observable from outside the system (UI state, API response, metric).
+      - Free of implementation details.
+
+    ## Non-Functional Requirements
+    Latency, availability, accessibility, observability, security, data
+    retention. Use numbers, not adjectives ("p95 < 200ms", not "fast").
+
+    ## Dependencies
+      - Upstream stories / epics that must land first (link Jira keys).
+      - External teams or vendors.
+      - Feature flags, data migrations, or platform capabilities.
+
+    ## Telemetry / Definition of Done
+      - Metric(s) that prove the outcome (name, threshold, dashboard link).
+      - Log event(s) emitted.
+      - Alert(s) or SLO(s) updated.
+
+    ## Rollout
+      - Feature flag key and default state.
+      - Staged rollout plan (cohort %, bake time).
+      - Rollback procedure.
+
+    ## Estimate
+    Story points, T-shirt size, or #NoEstimate forecast class. Single value.
+
+    ## Open Questions
+    List explicitly. A story with open questions is not yet refined.
+---
+# Shared epic template.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: epic-template
+  namespace: backlog-review-team
+data:
+  epic.md: |
+    # Epic Template
+
+    ## Title
+    `<Theme> - <Outcome>` (no implementation details in the title).
+
+    ## Problem Statement
+    One paragraph. Who is affected, what is the pain, and how do we know it
+    is real (data, customer interviews, support tickets).
+
+    ## Hypothesis
+    ```
+    We believe that <capability>
+    for <audience>
+    will result in <measurable outcome>.
+    We will know we are right when we see <leading indicator> move by <delta>
+    within <timeframe>.
+    ```
+
+    ## Success Metrics
+      - Primary metric (north star for this epic) with target.
+      - Guardrail metrics that must not regress.
+      - Dashboard link.
+
+    ## Scope
+    High-level bullets of the work inside this epic. Link to child stories
+    once they exist. Out-of-scope list is required.
+
+    ## Milestones
+    Dated checkpoints (discovery / alpha / GA). Each milestone names the
+    demoable outcome.
+
+    ## Risks & Assumptions
+    Top three of each, with mitigation owners.
+
+    ## Dependencies
+    Other epics, teams, platform capabilities, vendor work.
+
+    ## Owner & Stakeholders
+      - Epic owner (engineer).
+      - Product owner.
+      - Design owner.
+      - Consulted: security, data, SRE.
+
+    ## Stories
+    Link table of child stories with status. An epic with fewer than three
+    refined stories should be flagged as "not ready to start".
+---
+# Shared refinement process. This is the playbook the refinement-analyst
+# agent follows for every ticket it pulls from the backlog.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: refinement-process
+  namespace: backlog-review-team
+data:
+  process.md: |
+    # Refinement Process - Path to "Ready for Development"
+
+    Every story in the team backlog moves through these stages. A story that
+    fails any gate is held in the current stage and commented with the missing
+    items. Never silently transition a ticket.
+
+    ## Stage 1 - Triage (owner: Backlog Lead)
+    Goals: decide whether the ticket belongs on this team's backlog at all.
+      - Confirm the team label matches.
+      - Confirm it is not a duplicate (search by title similarity + linked
+        epic).
+      - Confirm type is correct (Epic / Story / Task / Bug).
+      - Reject with comment if any of the above fails. Move back to "Inbox".
+
+    ## Stage 2 - Shape (owner: Refinement Analyst)
+    Goals: the story is well-formed per the story-template.
+      - Title matches `Role - Capability - Outcome`.
+      - User-story sentence is present and scannable.
+      - In-scope / out-of-scope bullets exist.
+      - Acceptance criteria are Given/When/Then, atomic, and observable.
+      - Non-functional requirements use numbers.
+      - Open questions section is present (even if empty).
+    Gate: if any field is missing or vague, post a Jira comment listing the
+    gaps. Do not advance.
+
+    ## Stage 3 - Slice (owner: Refinement Analyst + Story Writer)
+    Goals: the story is thin enough to finish in a single sprint.
+      - Estimate is a single value (no ranges).
+      - If the estimate exceeds the team's sprint-fit threshold, propose a
+        split along vertical capability lines and file child stories.
+      - Confirm the acceptance criteria set still hangs together after the
+        split (no orphaned criteria).
+
+    ## Stage 4 - Dependencies (owner: Backlog Lead)
+    Goals: the story can actually start.
+      - Every upstream dependency is linked.
+      - Every dependency has a target date or is already done.
+      - Feature flags named.
+      - Data migrations flagged to the data team.
+    Gate: if any dependency is unresolved, hold the story in "Refinement"
+    and flag the dependency in the weekly Slack summary.
+
+    ## Stage 5 - Definition of Done (owner: Story Writer)
+    Goals: we will know when this is finished.
+      - Telemetry metric named with a dashboard link.
+      - Rollout plan with feature flag default and staged cohort %.
+      - Rollback procedure documented.
+    Gate: if DoD is incomplete, hold and comment.
+
+    ## Stage 6 - Ready for Dev (owner: Backlog Lead)
+    Goals: hand off to the implementing team.
+      - All prior gates pass.
+      - Transition ticket to "Ready for Dev".
+      - Record the transition in team memory so the following week's review
+        can compute the delta.
+
+    ## Weekly Review Output
+    The weekly review posts, per team:
+      - Stories advanced this week (with Jira keys and new stage).
+      - Stories stuck (with stage, age-in-stage in days, blocker).
+      - Template-compliance score for the top-of-backlog N items.
+      - Recommendations for the refinement session (specific tickets to
+        discuss, proposed splits, proposed dependency links).
+      - Epic health for any in-flight epic in this team's backlog.

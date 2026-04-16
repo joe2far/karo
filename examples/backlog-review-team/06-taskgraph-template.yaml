@@ -1,0 +1,203 @@
+---
+# Example TaskGraph for a single weekly review run for Team A.
+# The per-team AgentLoops in 07-loops-channels.yaml trigger the Backlog Lead,
+# which then creates a TaskGraph of this shape at runtime (one per team, per
+# week). This manifest is a concrete illustration of that shape and can be
+# applied by hand for a dry run before enabling the loops.
+apiVersion: karo.dev/v1alpha1
+kind: TaskGraph
+metadata:
+  name: weekly-review-team-a-2026w16
+  namespace: backlog-review-team
+  labels:
+    team: backlog-review
+    subject-team: team-a
+    week: "2026-W16"
+spec:
+  description: |
+    Weekly backlog review for Team A (Platform). Runs every Monday at 08:00.
+    Pulls Team A's backlog via JQL, scores the top-of-rank stories against
+    the refinement template, and posts a summary to #team-a-backlog.
+
+  ownerAgentRef:
+    name: backlog-lead
+
+  dispatcherRef:
+    name: backlog-router
+
+  tasks:
+    - id: pull-backlog
+      title: "Pull Team A backlog via JQL"
+      type: design
+      description: |
+        Run the `backlog`, `refinementReady`, and `epicsInFlight` JQL queries
+        from the team-a-jql ConfigMap (exposed via refinement-templates MCP).
+        Cap the top-N at 15 items by rank for per-ticket scoring.
+      deps: []
+      priority: High
+      addedBy: backlog-lead
+      addedAt: "2026-04-13T08:00:00Z"
+      timeoutMinutes: 10
+      acceptanceCriteria:
+        - "Top-of-rank 15 tickets listed with key, type, status, rank"
+        - "Count of epicsInFlight reported"
+        - "No tickets from other teams present"
+
+    - id: load-templates
+      title: "Load story/epic templates and refinement process"
+      type: design
+      description: |
+        Fetch story-template, epic-template, and refinement-process from the
+        refinement-templates MCP. Cache the section headings for use in the
+        per-ticket scoring tasks.
+      deps: []
+      priority: High
+      addedBy: backlog-lead
+      addedAt: "2026-04-13T08:00:00Z"
+      timeoutMinutes: 5
+      acceptanceCriteria:
+        - "All three templates loaded"
+        - "Section headings enumerated"
+
+    - id: load-last-week-snapshot
+      title: "Load last week's backlog snapshot from memory"
+      type: design
+      description: |
+        Read the most recent `team-a-backlog-snapshot` memory entry. Used to
+        compute week-over-week deltas (new, moved, stuck).
+      deps: []
+      priority: Medium
+      addedBy: backlog-lead
+      addedAt: "2026-04-13T08:00:00Z"
+      timeoutMinutes: 5
+      acceptanceCriteria:
+        - "Prior snapshot loaded or 'first run' flag set"
+
+    - id: score-tickets
+      title: "Score top-N tickets against refinement template"
+      type: impl
+      description: |
+        For each ticket returned by `pull-backlog`, run the refinement
+        analyst's scoring routine. This task is intentionally a single
+        dispatchable unit; the analyst may fan out internally.
+      deps: [pull-backlog, load-templates]
+      priority: High
+      addedBy: backlog-lead
+      addedAt: "2026-04-13T08:00:00Z"
+      timeoutMinutes: 25
+      acceptanceCriteria:
+        - "Each ticket has a stage, blockers list, suggested actions"
+        - "Jira comments posted for tickets with gaps"
+        - "No issue bodies were modified"
+
+    - id: draft-missing-fields
+      title: "Draft missing fields for tickets stuck in Shape/DoD"
+      type: design
+      description: |
+        For tickets that scored as missing user-story, acceptance criteria,
+        or DoD fields, dispatch to the story-writer to draft replacements
+        as Jira comments.
+      deps: [score-tickets]
+      priority: Medium
+      addedBy: backlog-lead
+      addedAt: "2026-04-13T08:00:00Z"
+      timeoutMinutes: 20
+      acceptanceCriteria:
+        - "Drafts posted as Jira comments (never body edits)"
+        - "Each draft uses template section headings"
+        - "TBD lines include a specific question"
+
+    - id: compute-deltas
+      title: "Compute week-over-week deltas"
+      type: impl
+      description: |
+        Diff this week's backlog against last week's snapshot. Categorise
+        each delta: advanced, stuck, new, closed, rank-change.
+      deps: [pull-backlog, load-last-week-snapshot]
+      priority: Medium
+      addedBy: backlog-lead
+      addedAt: "2026-04-13T08:00:00Z"
+      timeoutMinutes: 10
+      acceptanceCriteria:
+        - "Every delta cites a Jira key"
+        - "Stuck items include age-in-stage in days"
+
+    - id: compose-summary
+      title: "Compose weekly summary"
+      type: design
+      description: |
+        Write the final weekly summary:
+          - Headline: # tickets reviewed, # ready, # stuck.
+          - Template-compliance table (top-N).
+          - Stuck items with blockers and recommended owners.
+          - Drafts filed this week (Jira comment links).
+          - Recommendations for Wednesday's refinement session.
+          - Epic health block.
+        Stay under 600 words.
+      deps: [score-tickets, draft-missing-fields, compute-deltas]
+      priority: High
+      addedBy: backlog-lead
+      addedAt: "2026-04-13T08:00:00Z"
+      timeoutMinutes: 15
+      acceptanceCriteria:
+        - "All sections present"
+        - "Every recommendation cites a Jira key"
+        - "Length <= 600 words"
+      evalGate:
+        evalSuiteRef:
+          name: backlog-evals
+        minPassRate: 0.80
+        onFail: Reopen
+
+    - id: post-to-slack
+      title: "Post summary to team-a Slack channel"
+      type: impl
+      description: |
+        Call slack MCP chat.postMessage to C0TEAM-A-BACKLOG with the
+        summary. Include a thread-starter invite for the team's refinement
+        session. Record the Slack ts in memory so next week can link back.
+      deps: [compose-summary]
+      priority: High
+      addedBy: backlog-lead
+      addedAt: "2026-04-13T08:00:00Z"
+      timeoutMinutes: 5
+      acceptanceCriteria:
+        - "Slack message posted (ts recorded)"
+        - "Channel ID matches the team's channel ID"
+
+    - id: snapshot-backlog
+      title: "Persist this week's backlog snapshot"
+      type: impl
+      description: |
+        Store the week's backlog state (keys, stages, blockers, ranks) in
+        team memory under category `team-a-backlog-snapshot`. Used by next
+        week's compute-deltas.
+      deps: [compose-summary]
+      priority: Medium
+      addedBy: backlog-lead
+      addedAt: "2026-04-13T08:00:00Z"
+      timeoutMinutes: 5
+      acceptanceCriteria:
+        - "Snapshot written with ISO week tag"
+
+    - id: review-summary
+      title: "Review the posted summary"
+      type: review
+      description: "Sanity-check the summary for Jira-key citations, actionability, and length."
+      deps: [post-to-slack]
+      priority: Medium
+      addedBy: backlog-lead
+      addedAt: "2026-04-13T08:00:00Z"
+      timeoutMinutes: 10
+      acceptanceCriteria:
+        - "All recommendations cite issue keys"
+        - "Owner assigned or 'unassigned' flagged for every stuck item"
+
+  dispatchPolicy:
+    maxConcurrent: 3
+    defaultTimeoutMinutes: 20
+    retryPolicy:
+      maxRetries: 1
+      backoffSeconds: 60
+      onExhaustion: EscalateToHuman
+    allowAgentMutation: true

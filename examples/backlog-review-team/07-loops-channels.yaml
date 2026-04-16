@@ -1,0 +1,285 @@
+---
+# ----------------------------------------------------------------------------
+# Per-team AgentLoops. One AgentLoop per subject team so each team has its own
+# weekly heartbeat, schedule, and loop prompt. The loop prompt injects the
+# team key, JQL ConfigMap, and Slack channel so the same Backlog Lead agent
+# can run identical logic against different backlogs.
+# ----------------------------------------------------------------------------
+
+# Team A: Monday 08:00 UTC weekly heartbeat.
+apiVersion: karo.dev/v1alpha1
+kind: AgentLoop
+metadata:
+  name: weekly-review-team-a
+  namespace: backlog-review-team
+  labels:
+    team: backlog-review
+    subject-team: team-a
+spec:
+  agentSpecRef:
+    name: backlog-lead
+
+  triggers:
+    - type: cron
+      schedule: "0 8 * * 1"    # Mondays 08:00 UTC
+
+  dispatcherRef:
+    name: backlog-router
+
+  contextCarryover: true       # Keep prior-week context (deltas, stuck items)
+
+  concurrencyPolicy: Forbid    # Never overlap two runs for the same team
+
+  loopPrompt:
+    inline: |
+      Subject team: team-a
+      Display name: Team A (Platform)
+      JQL source: ConfigMap team-a-jql (key: team.yaml)
+      Slack channel: C0TEAM-A-BACKLOG
+      Top-N tickets to score: 15
+      Review cadence: weekly, Monday 08:00 UTC
+      Memory category: team-a-backlog-snapshot
+
+      Run the weekly backlog review for team-a ONLY. Do not query other
+      teams' projects or labels. Post the final summary to the Slack
+      channel above. Store this week's snapshot in the named memory
+      category.
+
+  evalGate:
+    evalSuiteRef:
+      name: backlog-evals
+    minPassRate: 0.80
+---
+# Team B: Tuesday 08:00 UTC. Offset by a day so Slack notifications don't
+# all land on the same morning.
+apiVersion: karo.dev/v1alpha1
+kind: AgentLoop
+metadata:
+  name: weekly-review-team-b
+  namespace: backlog-review-team
+  labels:
+    team: backlog-review
+    subject-team: team-b
+spec:
+  agentSpecRef:
+    name: backlog-lead
+
+  triggers:
+    - type: cron
+      schedule: "0 8 * * 2"    # Tuesdays 08:00 UTC
+
+  dispatcherRef:
+    name: backlog-router
+
+  contextCarryover: true
+
+  concurrencyPolicy: Forbid
+
+  loopPrompt:
+    inline: |
+      Subject team: team-b
+      Display name: Team B (Payments)
+      JQL source: ConfigMap team-b-jql (key: team.yaml)
+      Slack channel: C0TEAM-B-BACKLOG
+      Top-N tickets to score: 20         # Payments carries a bigger backlog
+      Review cadence: weekly, Tuesday 08:00 UTC
+      Memory category: team-b-backlog-snapshot
+
+      Run the weekly backlog review for team-b ONLY. Do not query other
+      teams' projects or labels. Post the final summary to the Slack
+      channel above. Store this week's snapshot in the named memory
+      category.
+
+  evalGate:
+    evalSuiteRef:
+      name: backlog-evals
+    minPassRate: 0.80
+---
+# Team C: Wednesday 08:00 UTC.
+apiVersion: karo.dev/v1alpha1
+kind: AgentLoop
+metadata:
+  name: weekly-review-team-c
+  namespace: backlog-review-team
+  labels:
+    team: backlog-review
+    subject-team: team-c
+spec:
+  agentSpecRef:
+    name: backlog-lead
+
+  triggers:
+    - type: cron
+      schedule: "0 8 * * 3"    # Wednesdays 08:00 UTC
+
+  dispatcherRef:
+    name: backlog-router
+
+  contextCarryover: true
+
+  concurrencyPolicy: Forbid
+
+  loopPrompt:
+    inline: |
+      Subject team: team-c
+      Display name: Team C (Growth)
+      JQL source: ConfigMap team-c-jql (key: team.yaml)
+      Slack channel: C0TEAM-C-BACKLOG
+      Top-N tickets to score: 12
+      Review cadence: weekly, Wednesday 08:00 UTC
+      Memory category: team-c-backlog-snapshot
+
+      Run the weekly backlog review for team-c ONLY. Do not query other
+      teams' projects or labels. Post the final summary to the Slack
+      channel above. Store this week's snapshot in the named memory
+      category.
+
+  evalGate:
+    evalSuiteRef:
+      name: backlog-evals
+    minPassRate: 0.80
+---
+# ----------------------------------------------------------------------------
+# Per-team AgentChannels. Each AgentChannel points at a different Slack
+# channel. They are used for (a) outbound weekly summaries posted by the
+# backlog-lead via the slack MCP AND (b) inbound human requests
+# ("/backlog-review trigger team-a now") that can kick off an off-cycle run.
+# ----------------------------------------------------------------------------
+
+apiVersion: karo.dev/v1alpha1
+kind: AgentChannel
+metadata:
+  name: team-a-slack
+  namespace: backlog-review-team
+  labels:
+    team: backlog-review
+    subject-team: team-a
+spec:
+  platform:
+    type: slack
+    slack:
+      appCredentialSecret:
+        name: slack-app-credentials
+        key: BOT_TOKEN
+      signingSecret:
+        name: slack-signing-secret
+        key: SIGNING_SECRET
+      channelId: "C0TEAM-A-BACKLOG"
+      threadReplies: true
+
+  inbound:
+    defaultTeamRef:
+      name: backlog-review-team
+    mode: task-creation
+    taskGraphTemplate:
+      ownerAgentRef:
+        name: backlog-lead
+      dispatcherRef:
+        name: backlog-router
+      initialTaskType: design
+
+  outbound:
+    notifyOn:
+      - taskGraphCompleted
+      - taskFailed
+      - approvalRequired
+      - evalGateFailed
+    format: summary
+
+  approvals:
+    enabled: true
+    style: interactive
+    timeoutMinutes: 1440        # 24h for backlog decisions
+    onTimeout: Escalate
+---
+apiVersion: karo.dev/v1alpha1
+kind: AgentChannel
+metadata:
+  name: team-b-slack
+  namespace: backlog-review-team
+  labels:
+    team: backlog-review
+    subject-team: team-b
+spec:
+  platform:
+    type: slack
+    slack:
+      appCredentialSecret:
+        name: slack-app-credentials
+        key: BOT_TOKEN
+      signingSecret:
+        name: slack-signing-secret
+        key: SIGNING_SECRET
+      channelId: "C0TEAM-B-BACKLOG"
+      threadReplies: true
+
+  inbound:
+    defaultTeamRef:
+      name: backlog-review-team
+    mode: task-creation
+    taskGraphTemplate:
+      ownerAgentRef:
+        name: backlog-lead
+      dispatcherRef:
+        name: backlog-router
+      initialTaskType: design
+
+  outbound:
+    notifyOn:
+      - taskGraphCompleted
+      - taskFailed
+      - approvalRequired
+      - evalGateFailed
+    format: summary
+
+  approvals:
+    enabled: true
+    style: interactive
+    timeoutMinutes: 1440
+    onTimeout: Escalate
+---
+apiVersion: karo.dev/v1alpha1
+kind: AgentChannel
+metadata:
+  name: team-c-slack
+  namespace: backlog-review-team
+  labels:
+    team: backlog-review
+    subject-team: team-c
+spec:
+  platform:
+    type: slack
+    slack:
+      appCredentialSecret:
+        name: slack-app-credentials
+        key: BOT_TOKEN
+      signingSecret:
+        name: slack-signing-secret
+        key: SIGNING_SECRET
+      channelId: "C0TEAM-C-BACKLOG"
+      threadReplies: true
+
+  inbound:
+    defaultTeamRef:
+      name: backlog-review-team
+    mode: task-creation
+    taskGraphTemplate:
+      ownerAgentRef:
+        name: backlog-lead
+      dispatcherRef:
+        name: backlog-router
+      initialTaskType: design
+
+  outbound:
+    notifyOn:
+      - taskGraphCompleted
+      - taskFailed
+      - approvalRequired
+      - evalGateFailed
+    format: summary
+
+  approvals:
+    enabled: true
+    style: interactive
+    timeoutMinutes: 1440
+    onTimeout: Escalate
