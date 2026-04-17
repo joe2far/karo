@@ -1,0 +1,74 @@
+---
+# Agent Team: Team Builder team
+apiVersion: karo.dev/v1alpha1
+kind: AgentTeam
+metadata:
+  name: team-builder-team
+  namespace: team-builder
+spec:
+  description: >-
+    Meta-team that researches existing teams, projects, and issue history
+    to generate production-ready KARO AgentTeam specifications. Given a
+    team name or project, it analyzes past issues, workflows, and patterns
+    to design an optimal agent team composition.
+
+  agents:
+    - agentSpecRef:
+        name: team-architect
+      role: orchestrator
+    - agentSpecRef:
+        name: research-analyst
+      role: executor
+    - agentSpecRef:
+        name: spec-generator
+      role: executor
+
+  sharedResources:
+    memoryRef:
+      name: team-builder-memory
+    toolSetRef:
+      name: team-builder-tools
+    sandboxClassRef:
+      name: team-builder-sandbox
+    modelConfigRef:
+      name: claude-sonnet
+
+  dispatcherRef:
+    name: team-builder-router
+
+  policyRef:
+    name: team-builder-policy
+---
+# Dispatcher: routes team builder tasks
+apiVersion: karo.dev/v1alpha1
+kind: Dispatcher
+metadata:
+  name: team-builder-router
+  namespace: team-builder
+spec:
+  mode: capability
+
+  taskGraphSelector:
+    matchLabels:
+      team: team-builder
+
+  capabilityRoutes:
+    - capability: design
+      agentSpecRef:
+        name: team-architect
+    - capability: impl
+      agentSpecRef:
+        name: research-analyst
+    - capability: eval
+      agentSpecRef:
+        name: spec-generator
+    - capability: review
+      agentSpecRef:
+        name: team-architect
+
+  fallbackAgentSpecRef:
+    name: team-architect
+
+  messaging:
+    type: mailbox
+    mailboxPattern: "{agentSpec}-mailbox"

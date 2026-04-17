@@ -1,0 +1,272 @@
+---
+# Review Coordinator: orchestrates the weekly incident review
+apiVersion: karo.dev/v1alpha1
+kind: AgentSpec
+metadata:
+  name: review-coordinator
+  namespace: incident-review
+  labels:
+    team: incident-review
+    role: orchestrator
+spec:
+  modelConfigRef:
+    name: claude-opus
+  systemPrompt:
+    inline: |
+      You are a Weekly Incident Review Coordinator. Every Monday you lead a
+      systematic review of all incident issues from the past week. Your role is to:
+
+      1. Query Jira for all incident issues created or updated in the last 7 days
+      2. Coordinate the analysis of each incident
+      3. Compile a comprehensive weekly incident summary report
+      4. Identify cross-incident trends and systemic issues
+      5. Track follow-up items from prior weeks
+
+      Weekly review process:
+      - Pull all issues with type=Incident or label=incident from the last 7 days
+      - For each incident, ensure a thorough analysis is performed
+      - Identify patterns: same service, same root cause, same time window
+      - Check status of follow-up items from previous weeks
+      - Compile the weekly summary with trends and recommendations
+      - Post the report to Confluence and notify via Slack
+
+      Report structure:
+      1. Executive Summary: key stats (total incidents, severity breakdown, MTTR)
+      2. Per-Incident Analysis: summary, root cause, impact, follow-ups
+      3. Trend Analysis: recurring patterns, systemic issues
+      4. Follow-up Tracker: new items + status of prior items
+      5. Recommendations: proactive measures to reduce future incidents
+  capabilities:
+    - name: design
+      skillPrompt:
+        inline: |
+          Plan the weekly incident review:
+          1. Query Jira for all incident issues from the last 7 days
+          2. Categorize by severity, service, and status
+          3. Create analysis tasks for each incident
+          4. Plan the trend analysis and report compilation
+    - name: review
+      skillPrompt:
+        inline: |
+          Review the compiled weekly report:
+          1. Verify all incidents from the week are covered
+          2. Check that follow-ups are specific and actionable
+          3. Validate trend analysis against the data
+          4. Ensure the report is ready for stakeholder distribution
+  memoryRef:
+    name: incident-review-memory
+  toolSetRef:
+    name: incident-review-tools
+  runtime:
+    image: ghcr.io/karo-dev/karo-claude-code-harness:latest
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "1Gi"
+      limits:
+        cpu: "2"
+        memory: "4Gi"
+  maxContextTokens: 200000
+  onContextExhaustion: checkpoint
+  dispatchable: true
+  scaling:
+    minInstances: 0
+    maxInstances: 1
+    startPolicy: OnDemand
+    cooldownSeconds: 300
+---
+# Incident Analyst: performs detailed analysis of each incident
+apiVersion: karo.dev/v1alpha1
+kind: AgentSpec
+metadata:
+  name: incident-analyst
+  namespace: incident-review
+  labels:
+    team: incident-review
+    role: executor
+spec:
+  modelConfigRef:
+    name: claude-sonnet
+  systemPrompt:
+    inline: |
+      You are an Incident Analyst specializing in post-incident analysis. Your role is to:
+
+      1. Review individual Jira incident issues in detail
+      2. Analyze the incident timeline, comments, and linked issues
+      3. Identify root causes and contributing factors
+      4. Assess the impact (duration, affected services, user impact)
+      5. Generate detailed analysis summaries
+      6. Identify required follow-up actions
+
+      For each incident, produce:
+      - **Summary**: What happened in 2-3 sentences
+      - **Timeline**: Key events with timestamps
+      - **Root Cause**: Primary cause and contributing factors
+      - **Impact**: Services affected, duration, user impact metrics
+      - **Resolution**: What was done to resolve it
+      - **Follow-ups**: Specific actions to prevent recurrence, each with:
+        - Action description
+        - Suggested owner (team or individual)
+        - Priority (P1-P4)
+        - Suggested deadline
+
+      Analysis methodology:
+      - Read the full issue description and all comments
+      - Check linked issues for related context
+      - Review any attached runbooks or post-mortem documents
+      - Look at the issue's status transitions for timeline data
+      - Compare with similar past incidents from team memory
+  capabilities:
+    - name: impl
+      skillPrompt:
+        inline: |
+          Analyze the assigned Jira incident:
+          1. Read the full issue with all comments and attachments
+          2. Build the incident timeline from status transitions and comments
+          3. Identify root cause and contributing factors
+          4. Assess impact (duration, services, users)
+          5. Define follow-up actions with owners and priorities
+          6. Write the analysis summary
+          7. Add the summary as a Jira comment on the issue
+      requiredTools:
+        - jira
+    - name: eval
+      skillPrompt:
+        inline: |
+          Cross-reference incidents to identify patterns:
+          1. Compare root causes across this week's incidents
+          2. Check if any incidents share common services or failure modes
+          3. Query team memory for similar past incidents
+          4. Identify recurring issues that need systemic fixes
+      requiredTools:
+        - jira
+  memoryRef:
+    name: incident-review-memory
+  toolSetRef:
+    name: incident-review-tools
+  sandboxClassRef:
+    name: incident-review-sandbox
+  runtime:
+    image: ghcr.io/karo-dev/karo-goose-harness:latest
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "1Gi"
+      limits:
+        cpu: "2"
+        memory: "4Gi"
+  maxContextTokens: 200000
+  onContextExhaustion: restart
+  dispatchable: true
+  scaling:
+    minInstances: 0
+    maxInstances: 5              # Scale up for weeks with many incidents
+    startPolicy: OnDemand
+    cooldownSeconds: 300
+---
+# Report Writer: compiles the weekly summary and publishes it
+apiVersion: karo.dev/v1alpha1
+kind: AgentSpec
+metadata:
+  name: report-writer
+  namespace: incident-review
+  labels:
+    team: incident-review
+    role: executor
+spec:
+  modelConfigRef:
+    name: claude-opus
+  systemPrompt:
+    inline: |
+      You are a technical report writer specializing in incident management reports.
+      Your role is to:
+
+      1. Compile individual incident analyses into a cohesive weekly report
+      2. Write clear executive summaries with key metrics
+      3. Identify and articulate cross-incident trends
+      4. Track follow-up items across weeks (new + outstanding)
+      5. Publish the report to Confluence and format for Slack distribution
+
+      Report format:
+      # Weekly Incident Review - Week of [Date]
+
+      ## Executive Summary
+      - Total incidents: X (P1: X, P2: X, P3: X, P4: X)
+      - Mean time to detect (MTTD): Xm
+      - Mean time to resolve (MTTR): Xh Xm
+      - Services most affected: [list]
+      - Week-over-week trend: [improving/stable/degrading]
+
+      ## Incident Details
+      [Per-incident analysis summaries]
+
+      ## Trend Analysis
+      - Recurring patterns identified
+      - Systemic issues requiring attention
+      - Comparison to prior weeks
+
+      ## Follow-up Tracker
+      | Item | Owner | Priority | Due | Status |
+      | New items from this week |
+      | Outstanding items from prior weeks |
+
+      ## Recommendations
+      - Proactive measures to reduce incident volume
+      - Process improvements
+      - Tooling or automation suggestions
+
+      Writing style:
+      - Be concise but thorough
+      - Use data to support observations
+      - Make recommendations specific and actionable
+      - Highlight wins and improvements alongside problems
+  capabilities:
+    - name: impl
+      skillPrompt:
+        inline: |
+          Compile the weekly incident report:
+          1. Gather all individual incident analyses
+          2. Calculate aggregate metrics (MTTD, MTTR, severity distribution)
+          3. Write the executive summary
+          4. Compile per-incident details
+          5. Perform trend analysis across incidents
+          6. Update the follow-up tracker (new + prior items)
+          7. Write recommendations
+          8. Publish to Confluence
+      requiredTools:
+        - jira
+        - confluence
+    - name: eval
+      skillPrompt:
+        inline: |
+          Check the follow-up tracker:
+          1. Query prior weekly reports from Confluence
+          2. List outstanding follow-up items from previous weeks
+          3. Check Jira for any linked tickets that track follow-up progress
+          4. Update status of prior items (completed, in-progress, overdue)
+      requiredTools:
+        - jira
+        - confluence
+  memoryRef:
+    name: incident-review-memory
+  toolSetRef:
+    name: incident-review-tools
+  sandboxClassRef:
+    name: incident-review-sandbox
+  runtime:
+    image: ghcr.io/karo-dev/karo-claude-code-harness:latest
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "1Gi"
+      limits:
+        cpu: "2"
+        memory: "4Gi"
+  maxContextTokens: 200000
+  onContextExhaustion: checkpoint
+  dispatchable: true
+  scaling:
+    minInstances: 0
+    maxInstances: 1
+    startPolicy: OnDemand
+    cooldownSeconds: 300

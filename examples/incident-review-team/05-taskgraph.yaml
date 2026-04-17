@@ -1,0 +1,164 @@
+---
+# TaskGraph: Weekly incident review (auto-created by AgentLoop each Monday)
+apiVersion: karo.dev/v1alpha1
+kind: TaskGraph
+metadata:
+  name: weekly-review-2026-w14
+  namespace: incident-review
+  labels:
+    team: incident-review
+    type: weekly-review
+spec:
+  description: |
+    Weekly incident review for the week of 2026-03-30 to 2026-04-05.
+    Automatically triggered by the weekly-incident-review AgentLoop.
+
+  ownerAgentRef:
+    name: review-coordinator
+
+  dispatcherRef:
+    name: incident-review-router
+
+  tasks:
+    - id: fetch-incidents
+      title: "Query Jira for last week's incidents"
+      type: design
+      description: |
+        Query Jira for all incident issues from the past 7 days:
+        1. Search for issues with type=Incident OR label=incident
+        2. Include issues created in the last 7 days
+        3. Include issues resolved in the last 7 days (even if created earlier)
+        4. Capture: key, summary, priority, status, created, resolved, assignee, labels
+        5. Categorize by severity (P1-P4) and service/component
+        6. Create individual analysis tasks for each incident found
+
+        JQL: type = Incident AND (created >= -7d OR resolved >= -7d) ORDER BY priority ASC
+      deps: []
+      priority: High
+      addedBy: review-coordinator
+      addedAt: "2026-04-06T09:00:00Z"
+      timeoutMinutes: 30
+      acceptanceCriteria:
+        - "All incidents from the past 7 days retrieved"
+        - "Incidents categorized by severity and service"
+        - "Individual analysis tasks created for each incident"
+
+    - id: check-prior-followups
+      title: "Check status of prior week follow-up items"
+      type: eval
+      description: |
+        Review follow-up items from prior weekly reports:
+        1. Query team memory for outstanding follow-up items
+        2. Check Jira for linked tickets tracking follow-up work
+        3. Update status: completed, in-progress, overdue, blocked
+        4. Flag any items overdue by more than 2 weeks
+      deps: []
+      priority: Medium
+      addedBy: review-coordinator
+      addedAt: "2026-04-06T09:00:00Z"
+      timeoutMinutes: 30
+      acceptanceCriteria:
+        - "All prior follow-ups checked"
+        - "Status updated for each item"
+        - "Overdue items flagged"
+
+    - id: analyze-incidents
+      title: "Perform detailed analysis of each incident"
+      type: impl
+      description: |
+        For each incident found in fetch-incidents:
+        1. Read the full Jira issue with all comments
+        2. Build the incident timeline from status transitions
+        3. Identify root cause and contributing factors
+        4. Assess impact (duration, services, users affected)
+        5. Define follow-up actions with suggested owners and priorities
+        6. Write the analysis summary
+        7. Add the analysis as a comment on the Jira issue
+
+        This task will be executed once per incident. The dispatcher will
+        scale incident-analyst instances as needed.
+      deps: [fetch-incidents]
+      priority: High
+      addedBy: review-coordinator
+      addedAt: "2026-04-06T09:00:00Z"
+      timeoutMinutes: 120
+      acceptanceCriteria:
+        - "Every incident has a complete analysis"
+        - "Analysis comments added to each Jira issue"
+        - "Follow-ups defined for each incident"
+
+    - id: trend-analysis
+      title: "Identify cross-incident trends and patterns"
+      type: eval
+      description: |
+        Analyze incidents collectively for patterns:
+        1. Group incidents by root cause category
+        2. Identify services with multiple incidents
+        3. Look for time-based patterns (same day, same window)
+        4. Compare to prior weeks for trend direction
+        5. Check team memory for recurring issues across months
+        6. Calculate aggregate metrics: total count, MTTD, MTTR by severity
+      deps: [analyze-incidents]
+      priority: High
+      addedBy: review-coordinator
+      addedAt: "2026-04-06T09:00:00Z"
+      timeoutMinutes: 45
+      evalGate:
+        evalSuiteRef:
+          name: incident-review-evals
+        minPassRate: 0.80
+        onFail: Reopen
+      acceptanceCriteria:
+        - "Patterns identified with supporting data"
+        - "Aggregate metrics calculated"
+        - "Comparison to prior weeks included"
+
+    - id: compile-report
+      title: "Compile weekly incident summary report"
+      type: impl
+      description: |
+        Compile the weekly incident report:
+        1. Write executive summary with key metrics
+        2. Include per-incident analysis summaries
+        3. Add trend analysis findings
+        4. Update follow-up tracker (new + prior items)
+        5. Write actionable recommendations
+        6. Publish to Confluence under the Incident Reviews space
+        7. Store report summary in team memory for future reference
+      deps: [trend-analysis, check-prior-followups]
+      priority: High
+      addedBy: review-coordinator
+      addedAt: "2026-04-06T09:00:00Z"
+      timeoutMinutes: 60
+      acceptanceCriteria:
+        - "Report published to Confluence"
+        - "All sections complete"
+        - "Follow-up tracker updated"
+
+    - id: final-review
+      title: "Review and distribute the weekly report"
+      type: review
+      description: |
+        Final review of the weekly report:
+        1. Verify all incidents are covered
+        2. Check metrics accuracy
+        3. Ensure follow-ups are actionable and assigned
+        4. Confirm report is published to Confluence
+        5. Post summary to Slack channel
+      deps: [compile-report]
+      priority: Medium
+      addedBy: review-coordinator
+      addedAt: "2026-04-06T09:00:00Z"
+      timeoutMinutes: 30
+      acceptanceCriteria:
+        - "Report reviewed and approved"
+        - "Slack notification sent"
+
+  dispatchPolicy:
+    maxConcurrent: 5             # Analyze multiple incidents in parallel
+    defaultTimeoutMinutes: 60
+    retryPolicy:
+      maxRetries: 2
+      backoffSeconds: 60
+      onExhaustion: EscalateToHuman
+    allowAgentMutation: true

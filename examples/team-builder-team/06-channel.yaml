@@ -1,0 +1,46 @@
+---
+# AgentChannel: Slack for team builder requests
+apiVersion: karo.dev/v1alpha1
+kind: AgentChannel
+metadata:
+  name: team-builder-slack
+  namespace: team-builder
+spec:
+  platform:
+    type: slack
+    slack:
+      appCredentialSecret:
+        name: slack-app-credentials
+        key: BOT_TOKEN
+      signingSecret:
+        name: slack-signing-secret
+        key: SIGNING_SECRET
+      channelId: "C0TEAM-BUILDER"
+
+  inbound:
+    defaultTeamRef:
+      name: team-builder-team
+    mode: auto
+    autoRoute:
+      modelConfigRef:
+        name: claude-sonnet
+      classificationPrompt:
+        inline: |
+          Classify the incoming message as one of: team-build, team-review, or general.
+          If it asks to create, design, or build an agent team — classify as team-build.
+          If it asks to review or improve an existing team spec — classify as team-review.
+          Otherwise classify as general.
+
+  outbound:
+    notifyOn:
+      - taskGraphCreated
+      - taskGraphCompleted
+      - taskFailed
+      - approvalRequired
+    format: detailed
+
+  approvals:
+    enabled: true
+    style: interactive
+    timeoutMinutes: 120
+    onTimeout: Fail

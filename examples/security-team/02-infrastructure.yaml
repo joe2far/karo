@@ -1,0 +1,243 @@
+---
+# ModelConfig: Claude Sonnet for security analysis
+apiVersion: karo.dev/v1alpha1
+kind: ModelConfig
+metadata:
+  name: claude-sonnet
+  namespace: security-team
+spec:
+  provider: anthropic
+  name: claude-sonnet-4-20250514
+  apiKeySecret:
+    name: anthropic-api-key
+    key: ANTHROPIC_API_KEY
+  parameters:
+    maxTokens: 8192
+    temperature: 0.1         # Precise analysis for security work
+---
+# ModelConfig: Claude Opus for complex remediation planning
+apiVersion: karo.dev/v1alpha1
+kind: ModelConfig
+metadata:
+  name: claude-opus
+  namespace: security-team
+spec:
+  provider: anthropic
+  name: claude-opus-4-20250514
+  apiKeySecret:
+    name: anthropic-api-key
+    key: ANTHROPIC_API_KEY
+  parameters:
+    maxTokens: 16384
+    temperature: 0.1
+---
+# SandboxClass: network access for GitHub, Jira, and package registries
+apiVersion: karo.dev/v1alpha1
+kind: SandboxClass
+metadata:
+  name: security-sandbox
+  namespace: security-team
+spec:
+  runtimeClassName: gvisor
+  networkPolicy:
+    egress: restricted
+    allowedDomains:
+      - "api.github.com"
+      - "*.atlassian.net"
+      - "*.jira.com"
+      - "registry.npmjs.org"
+      - "pypi.org"
+      - "proxy.golang.org"
+      - "repo1.maven.org"
+      - "rubygems.org"
+      - "crates.io"
+      - "nvd.nist.gov"
+      - "osv.dev"
+      - "api.osv.dev"
+      - "security.snyk.io"
+    allowedCIDRs:
+      - "10.0.0.0/8"
+  filesystem:
+    readOnlyRootFilesystem: false
+    allowedMounts:
+      - /tmp
+      - /workspace
+  resourceLimits:
+    cpu: "4"
+    memory: "8Gi"              # Higher limits for dependency resolution
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    allowPrivilegeEscalation: false
+    seccompProfile:
+      type: RuntimeDefault
+    capabilities:
+      drop:
+        - ALL
+---
+# MemoryStore: security findings and remediation knowledge
+apiVersion: karo.dev/v1alpha1
+kind: MemoryStore
+metadata:
+  name: security-memory
+  namespace: security-team
+spec:
+  backend:
+    type: mem0
+    mem0:
+      apiKeySecret:
+        name: mem0-api-key
+        key: API_KEY
+      organizationId: "platform-org"
+      projectId: "security-team"
+  scope: team
+  retentionDays: 730           # 2 years for compliance
+  maxMemories: 100000
+  categories:
+    - cve-analysis
+    - remediation-history
+    - dependency-map
+    - wiz-finding
+    - upgrade-result
+    - breaking-change
+---
+# ToolSet: Jira, GitHub, code execution, vulnerability databases
+apiVersion: karo.dev/v1alpha1
+kind: ToolSet
+metadata:
+  name: security-tools
+  namespace: security-team
+spec:
+  tools:
+    - name: jira
+      type: mcp
+      transport: streamable-http
+      endpoint: "http://jira-mcp-server.security-team.svc:8080"
+      permissions:
+        - read
+        - search
+        - comment
+        - transition
+      credentialSecret:
+        name: jira-mcp-credentials
+        key: JIRA_TOKEN
+
+    - name: github
+      type: mcp
+      transport: streamable-http
+      endpoint: "http://github-mcp-server.security-team.svc:8080"
+      permissions:
+        - read
+        - write
+        - pull-request
+        - search
+      credentialSecret:
+        name: github-mcp-credentials
+        key: GITHUB_TOKEN
+
+    - name: code-executor
+      type: mcp
+      transport: stdio
+      command: ["/usr/local/bin/code-exec-mcp"]
+      permissions:
+        - execute
+      sandboxRequired: true
+
+  policyRef:
+    name: security-policy
+---
+# AgentPolicy: strict governance for security remediation
+apiVersion: karo.dev/v1alpha1
+kind: AgentPolicy
+metadata:
+  name: security-policy
+  namespace: security-team
+spec:
+  targetSelector:
+    matchLabels:
+      team: security
+
+  models:
+    allowedProviders:
+      - anthropic
+    requireMinContextWindow: 100000
+
+  toolCalls:
+    maxPerMinute: 120
+    maxPerLoop: 1000
+    requireSandboxForExecute: true
+
+  loop:
+    maxIterationsPerRun: 200
+    maxRunDurationMinutes: 240
+    requireHumanApprovalAfterIterations: 50   # Tighter approval for security changes
+
+  taskGraph:
+    allowMutation: true
+    mutationScope:
+      - addTask
+      - closeTask
+    denyMutation:
+      - deleteTask
+    requireAuditTrail: true
+
+  audit:
+    enabled: true
+    logLevel: Full             # Full audit required for security work
+    logDestination:
+      type: stdout
+    retentionDays: 730         # 2 years for compliance
+
+  dataClassification:
+    allowedLevels:
+      - internal
+      - confidential
+    denyPatterns:
+      - ".*password.*"
+      - ".*secret.*"
+      - ".*private.?key.*"
+      - ".*api.?key.*"
+
+  escalation:
+    onPolicyViolation: Block
+---
+# EvalSuite: security remediation quality gates
+apiVersion: karo.dev/v1alpha1
+kind: EvalSuite
+metadata:
+  name: security-evals
+  namespace: security-team
+spec:
+  agentSpecRef:
+    name: remediation-engineer
+  evalCases:
+    - id: vulnerability-addressed
+      description: "The remediation addresses the specific CVE/vulnerability"
+      assertions:
+        - type: llm-judge
+          criteria: "The proposed changes directly address the identified vulnerability by updating the affected dependency to a version that contains the fix"
+          judgeModelConfigRef:
+            name: claude-sonnet
+    - id: no-breaking-changes
+      description: "Dependency updates don't introduce known breaking changes"
+      assertions:
+        - type: llm-judge
+          criteria: "The analysis confirms there are no major version bumps with known breaking changes, or if there are, migration steps are documented"
+          judgeModelConfigRef:
+            name: claude-sonnet
+    - id: tests-considered
+      description: "Testing requirements are documented"
+      assertions:
+        - type: llm-judge
+          criteria: "The PR description includes what tests were run or should be run to validate the dependency update doesn't break functionality"
+          judgeModelConfigRef:
+            name: claude-sonnet
+    - id: no-destructive-changes
+      description: "No destructive operations in the remediation"
+      assertions:
+        - type: not-contains
+          value: "rm -rf"
+        - type: not-contains
+          value: "DROP TABLE"
+        - type: not-contains
+          value: "force push"
