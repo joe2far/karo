@@ -16,6 +16,12 @@ issues:
       linters:
         - dupl
         - lll
+    - linters:
+        - typecheck
+      text: "could not import k8s.io/apimachinery"
+    - linters:
+        - typecheck
+      text: "undefined"
 linters:
   disable-all: true
   enable:
@@ -36,10 +42,10 @@ linters:
     - prealloc
     - revive
     - staticcheck
-    - typecheck
     - unconvert
     - unparam
     - unused
+  # typecheck disabled due to known issues with Go 1.23+ and k8s.io/apimachinery export data
 
 linters-settings:
   revive:

@@ -96,7 +96,7 @@ help: ## Display this help.
 
 .PHONY: manifests
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
-	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+	$(CONTROLLER_GEN) rbac:roleName=manager-role crd:allowDangerousTypes=true webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
@@ -147,6 +147,56 @@ docker-build: ## Build docker image with the manager.
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
 	$(CONTAINER_TOOL) push ${IMG}
+
+##@ Harness Images
+
+HARNESS_REGISTRY ?= ghcr.io/karo-dev
+HARNESS_VERSION ?= $(VERSION)
+
+.PHONY: docker-build-goose-harness
+docker-build-goose-harness: ## Build Goose harness image
+	$(CONTAINER_TOOL) build -t $(HARNESS_REGISTRY)/goose-harness:$(HARNESS_VERSION) \
+		-t $(HARNESS_REGISTRY)/goose-harness:latest \
+		-f harness/goose/Dockerfile harness/goose/
+
+.PHONY: docker-build-claude-code-harness
+docker-build-claude-code-harness: ## Build Claude Code harness image
+	$(CONTAINER_TOOL) build -t $(HARNESS_REGISTRY)/claude-code-harness:$(HARNESS_VERSION) \
+		-t $(HARNESS_REGISTRY)/claude-code-harness:latest \
+		-f harness/claude-code/Dockerfile harness/claude-code/
+
+.PHONY: docker-build-claw-code-harness
+docker-build-claw-code-harness: ## Build Claw Code harness image
+	$(CONTAINER_TOOL) build -t $(HARNESS_REGISTRY)/claw-code-harness:$(HARNESS_VERSION) \
+		-t $(HARNESS_REGISTRY)/claw-code-harness:latest \
+		-f harness/claw-code/Dockerfile harness/claw-code/
+
+.PHONY: docker-build-harnesses
+docker-build-harnesses: docker-build-goose-harness docker-build-claude-code-harness docker-build-claw-code-harness ## Build all harness images
+
+.PHONY: docker-push-goose-harness
+docker-push-goose-harness: ## Push Goose harness image
+	$(CONTAINER_TOOL) push $(HARNESS_REGISTRY)/goose-harness:$(HARNESS_VERSION)
+	$(CONTAINER_TOOL) push $(HARNESS_REGISTRY)/goose-harness:latest
+
+.PHONY: docker-push-claude-code-harness
+docker-push-claude-code-harness: ## Push Claude Code harness image
+	$(CONTAINER_TOOL) push $(HARNESS_REGISTRY)/claude-code-harness:$(HARNESS_VERSION)
+	$(CONTAINER_TOOL) push $(HARNESS_REGISTRY)/claude-code-harness:latest
+
+.PHONY: docker-push-claw-code-harness
+docker-push-claw-code-harness: ## Push Claw Code harness image
+	$(CONTAINER_TOOL) push $(HARNESS_REGISTRY)/claw-code-harness:$(HARNESS_VERSION)
+	$(CONTAINER_TOOL) push $(HARNESS_REGISTRY)/claw-code-harness:latest
+
+.PHONY: docker-push-harnesses
+docker-push-harnesses: docker-push-goose-harness docker-push-claude-code-harness docker-push-claw-code-harness ## Push all harness images
+
+.PHONY: docker-build-all
+docker-build-all: docker-build docker-build-harnesses ## Build operator and all harness images
+
+.PHONY: docker-push-all
+docker-push-all: docker-push docker-push-harnesses ## Push operator and all harness images
 
 # PLATFORMS defines the target platforms for the manager image be built to provide support to multiple
 # architectures. (i.e. make docker-buildx IMG=myregistry/mypoperator:0.0.1). To use this option you need to:
