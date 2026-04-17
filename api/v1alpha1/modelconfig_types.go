@@ -20,6 +20,11 @@ type ModelConfigSpec struct {
 	Vertex       *VertexConfig             `json:"vertex,omitempty"`
 	Parameters   ModelParameters           `json:"parameters,omitempty"`
 	RateLimit    ModelRateLimit            `json:"rateLimit,omitempty"`
+	// GatewayRef, if set, routes LLM calls for this model through an
+	// AgentGateway in the same namespace instead of calling the provider
+	// endpoint directly. Agents consuming this ModelConfig will dial the
+	// gateway's resolved endpoint.
+	GatewayRef *corev1.LocalObjectReference `json:"gatewayRef,omitempty"`
 }
 
 type BedrockConfig struct {

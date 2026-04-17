@@ -9,6 +9,11 @@ type ToolSetSpec struct {
 	// +kubebuilder:validation:MinItems=1
 	Tools     []ToolEntry                  `json:"tools"`
 	PolicyRef *corev1.LocalObjectReference `json:"policyRef,omitempty"`
+	// GatewayRef, if set, routes MCP tool calls through an AgentGateway
+	// in the same namespace. The gateway acts as an MCP multiplexer that
+	// applies per-tool permission enforcement, rate limits, and audit
+	// logging, rather than agents talking to each tool endpoint directly.
+	GatewayRef *corev1.LocalObjectReference `json:"gatewayRef,omitempty"`
 }
 
 // +kubebuilder:validation:XValidation:rule="self.transport != 'stdio' || size(self.command) > 0",message="command required for stdio transport"

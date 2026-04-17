@@ -16,6 +16,11 @@ type AgentSpecSpec struct {
 	MemoryRef            *corev1.LocalObjectReference `json:"memoryRef,omitempty"`
 	ToolSetRef           *corev1.LocalObjectReference `json:"toolSetRef,omitempty"`
 	SandboxClassRef      *corev1.LocalObjectReference `json:"sandboxClassRef,omitempty"`
+	// GatewayRef is a namespace-default AgentGateway used for both LLM
+	// and MCP traffic when the referenced ModelConfig/ToolSet do not
+	// pin a gateway of their own. An explicit gatewayRef on a
+	// ModelConfig or ToolSet takes precedence over this default.
+	GatewayRef           *corev1.LocalObjectReference `json:"gatewayRef,omitempty"`
 	WorkspaceCredentials *WorkspaceCredentialsConfig  `json:"workspaceCredentials,omitempty"`
 	Runtime              RuntimeConfig                `json:"runtime"`
 	// +kubebuilder:validation:Minimum=0

@@ -10,7 +10,7 @@ KARO is a Kubernetes-native operator that provides first-class CRD primitives fo
 
 ## Overview
 
-KARO defines 14 Custom Resource Definitions that cover the full lifecycle of AI agent operations:
+KARO defines 15 Custom Resource Definitions that cover the full lifecycle of AI agent operations:
 
 | CRD | Purpose |
 |-----|---------|
@@ -28,6 +28,7 @@ KARO defines 14 Custom Resource Definitions that cover the full lifecycle of AI 
 | **AgentPolicy** | Governance: model constraints, tool limits, audit, data classification |
 | **EvalSuite** | Automated evaluation gates for task quality |
 | **AgentChannel** | Human-agent communication via Slack, Telegram, Discord, Teams |
+| **AgentGateway** | Request-level proxy for agent→LLM / MCP / A2A traffic with rate limits, budgets, auth, failover, and unified observability (agentgateway.dev-based) |
 
 ## Architecture
 
@@ -51,13 +52,19 @@ KARO defines 14 Custom Resource Definitions that cover the full lifecycle of AI 
         ┌──────────┐ ┌──────────┐ ┌──────────┐
         │ AgentInst│ │ AgentInst│ │ AgentInst│
         │  (pod)   │ │  (pod)   │ │  (pod)   │
-        └──────────┘ └──────────┘ └──────────┘
-              │            │            │
-              ▼            ▼            ▼
+        └─────┬────┘ └────┬─────┘ └────┬─────┘
+              │           │            │
+              ▼           ▼            ▼
         ┌──────────────────────────────────┐
         │    agent-runtime-mcp sidecar     │
         │  (8 MCP tools over JSON-RPC 2.0) │
-        └──────────────────────────────────┘
+        └────────────────┬─────────────────┘
+                         │ LLM / MCP / A2A
+                         ▼
+                ┌──────────────────┐
+                │   AgentGateway   │ ──► Model providers, MCP servers, peer agents
+                │ (proxy + policy) │     (rate limits, budgets, failover, tracing)
+                └──────────────────┘
 ```
 
 ## Key Features
@@ -65,6 +72,7 @@ KARO defines 14 Custom Resource Definitions that cover the full lifecycle of AI 
 - **DAG Task Orchestration** -- TaskGraph defines tasks with dependencies, eval gates, and retry policies. The Dispatcher routes tasks to agents by capability.
 - **Scale-to-Zero** -- Agents hibernate when idle, wake on mailbox messages. No pods running when there's no work.
 - **MCP-First Runtime Contract** -- Every agent pod gets an `agent-runtime-mcp` sidecar exposing 8 tools (`poll_mailbox`, `ack_message`, `complete_task`, `fail_task`, `add_task`, `query_memory`, `store_memory`, `report_status`).
+- **Request-Level Gateway** -- AgentGateway proxies agent→LLM, agent→tool (MCP), and agent→agent (A2A) traffic with per-agent rate limits, budget controls, provider failover, and unified metrics/tracing. Reference `ModelConfig`, `ToolSet`, or `AgentSpec` via `gatewayRef` and traffic routes through the bundled [agentgateway.dev](https://github.com/agentgateway/agentgateway) build automatically.
 - **Agent Framework Agnostic** -- Reference harnesses for [Goose](https://github.com/block/goose) and Claude Code. Any agent that speaks MCP can plug in.
 - **Policy & Governance** -- AgentPolicy controls model access, tool usage, loop limits, and data classification. EvalSuite gates ensure quality before tasks close.
 - **Human-in-the-Loop** -- AgentChannel integrates with Slack, Telegram, Discord, and Teams for approvals, overrides, and notifications.
@@ -143,17 +151,17 @@ spec:
       onExhaustion: EscalateToHuman
 ```
 
-See [`config/samples/`](config/samples/) for complete examples of all 14 CRDs.
+See [`config/samples/`](config/samples/) for complete examples of all 15 CRDs.
 
 ## Project Structure
 
 ```
-├── api/v1alpha1/          # CRD type definitions (14 CRDs, 96 Go types)
+├── api/v1alpha1/          # CRD type definitions (15 CRDs)
 ├── cmd/
 │   ├── main.go            # Operator entrypoint
 │   └── agent-runtime-mcp/ # MCP sidecar binary
 ├── internal/
-│   ├── controller/        # 14 reconcilers
+│   ├── controller/        # 15 reconcilers
 │   ├── dag/               # DAG cycle detection (Kahn's algorithm)
 │   ├── eval/              # Eval case runner
 │   ├── git/               # Git credential injection
