@@ -28,7 +28,7 @@ type FilesystemConfig struct {
 }
 
 type SecurityContextConfig struct {
-	RunAsNonRoot             bool                   `json:"runAsNonRoot,omitempty"`
+	RunAsNonRoot bool `json:"runAsNonRoot,omitempty"`
 	// +kubebuilder:validation:Minimum=0
 	RunAsUser                *int64                 `json:"runAsUser,omitempty"`
 	AllowPrivilegeEscalation bool                   `json:"allowPrivilegeEscalation,omitempty"`

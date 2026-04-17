@@ -9,7 +9,7 @@
 //     - The AgentPolicy controller compiles policy rules into a JSON ConfigMap
 //     - The AgentInstance controller mounts this ConfigMap into agent pods
 //     - The agent-runtime-mcp sidecar reads the policy and enforces it at
-//       tool-call time (rate limiting, model validation, data classification)
+//     tool-call time (rate limiting, model validation, data classification)
 //
 // This is the same pattern used by Kyverno (policy as data) and NeMo Guardrails
 // (policy sidecar). No OPA/Gatekeeper dependency needed — the policy is simple

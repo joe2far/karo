@@ -8,23 +8,23 @@ import (
 type EvalSuiteSpec struct {
 	AgentSpecRef corev1.LocalObjectReference `json:"agentSpecRef"`
 	// +kubebuilder:validation:MinItems=1
-	EvalCases    []EvalCase                  `json:"evalCases"`
-	Schedule     string                      `json:"schedule,omitempty"`
+	EvalCases []EvalCase `json:"evalCases"`
+	Schedule  string     `json:"schedule,omitempty"`
 }
 
 type EvalCase struct {
 	// +kubebuilder:validation:MinLength=1
-	ID          string      `json:"id"`
-	Description string      `json:"description"`
-	Prompt      string      `json:"prompt,omitempty"`
+	ID          string `json:"id"`
+	Description string `json:"description"`
+	Prompt      string `json:"prompt,omitempty"`
 	// +kubebuilder:validation:MinItems=1
-	Assertions  []Assertion `json:"assertions"`
+	Assertions []Assertion `json:"assertions"`
 }
 
 // +kubebuilder:validation:XValidation:rule="self.type != 'llm-judge' || has(self.judgeModelConfigRef)",message="judgeModelConfigRef required for llm-judge assertions"
-// +kubebuilder:validation:XValidation:rule="self.type != 'llm-judge' || self.criteria != ''",message="criteria required for llm-judge assertions"
-// +kubebuilder:validation:XValidation:rule="self.type != 'contains' && self.type != 'not-contains' || self.value != ''",message="value required for contains/not-contains assertions"
-// +kubebuilder:validation:XValidation:rule="self.type != 'matches-pattern' && self.type != 'not-matches-pattern' || self.pattern != ''",message="pattern required for pattern-matching assertions"
+// +kubebuilder:validation:XValidation:rule="self.type != 'llm-judge' || self.criteria != ”",message="criteria required for llm-judge assertions"
+// +kubebuilder:validation:XValidation:rule="self.type != 'contains' && self.type != 'not-contains' || self.value != ”",message="value required for contains/not-contains assertions"
+// +kubebuilder:validation:XValidation:rule="self.type != 'matches-pattern' && self.type != 'not-matches-pattern' || self.pattern != ”",message="pattern required for pattern-matching assertions"
 type Assertion struct {
 	// +kubebuilder:validation:Enum=contains;not-contains;matches-pattern;not-matches-pattern;llm-judge
 	Type                AssertionType                `json:"type"`
@@ -45,8 +45,8 @@ const (
 )
 
 type EvalSuiteStatus struct {
-	Phase         string             `json:"phase,omitempty"`
-	LastRunAt     *metav1.Time       `json:"lastRunAt,omitempty"`
+	Phase     string       `json:"phase,omitempty"`
+	LastRunAt *metav1.Time `json:"lastRunAt,omitempty"`
 	// +kubebuilder:validation:Minimum=0
 	// +kubebuilder:validation:Maximum=1
 	LastPassRate  float64            `json:"lastPassRate,omitempty"`

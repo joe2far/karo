@@ -9,9 +9,9 @@
 //     `gatewayClassName: agentgateway`.
 //   - KARO's job is to translate its declarative CRDs (ModelConfig / ToolSet)
 //     into the native resources the gateway consumes:
-//       * `AgentgatewayBackend` (agentgateway.dev/v1alpha1) — one per upstream
-//       * `HTTPRoute` (gateway.networking.k8s.io/v1) — attaches the backend to
-//         the user's Gateway at a KARO-owned path prefix
+//   - `AgentgatewayBackend` (agentgateway.dev/v1alpha1) — one per upstream
+//   - `HTTPRoute` (gateway.networking.k8s.io/v1) — attaches the backend to
+//     the user's Gateway at a KARO-owned path prefix
 //   - We model these as `unstructured.Unstructured` so KARO does not take a
 //     hard go.mod dependency on agentgateway's or gateway-api's Go types —
 //     the translator is data-driven and version-tolerant.

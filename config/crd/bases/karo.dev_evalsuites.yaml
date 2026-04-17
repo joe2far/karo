@@ -110,13 +110,13 @@ spec:
                         - message: judgeModelConfigRef required for llm-judge assertions
                           rule: self.type != 'llm-judge' || has(self.judgeModelConfigRef)
                         - message: criteria required for llm-judge assertions
-                          rule: self.type != 'llm-judge' || self.criteria != ''
+                          rule: self.type != 'llm-judge' || self.criteria != ”
                         - message: value required for contains/not-contains assertions
                           rule: self.type != 'contains' && self.type != 'not-contains'
-                            || self.value != ''
+                            || self.value != ”
                         - message: pattern required for pattern-matching assertions
                           rule: self.type != 'matches-pattern' && self.type != 'not-matches-pattern'
-                            || self.pattern != ''
+                            || self.pattern != ”
                       minItems: 1
                       type: array
                     description:

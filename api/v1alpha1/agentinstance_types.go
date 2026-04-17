@@ -15,7 +15,7 @@ type TaskRef struct {
 	// +kubebuilder:validation:MinLength=1
 	TaskGraph string `json:"taskGraph"`
 	// +kubebuilder:validation:MinLength=1
-	TaskID    string `json:"taskId"`
+	TaskID string `json:"taskId"`
 }
 
 type HibernationConfig struct {
@@ -24,13 +24,13 @@ type HibernationConfig struct {
 }
 
 type AgentInstanceStatus struct {
-	Phase             AgentInstancePhase      `json:"phase"`
-	PodRef            *corev1.ObjectReference `json:"podRef,omitempty"`
-	StartedAt         *metav1.Time            `json:"startedAt,omitempty"`
-	LastActiveAt      *metav1.Time            `json:"lastActiveAt,omitempty"`
+	Phase        AgentInstancePhase      `json:"phase"`
+	PodRef       *corev1.ObjectReference `json:"podRef,omitempty"`
+	StartedAt    *metav1.Time            `json:"startedAt,omitempty"`
+	LastActiveAt *metav1.Time            `json:"lastActiveAt,omitempty"`
 	// +kubebuilder:validation:Minimum=0
-	ContextTokensUsed int64                   `json:"contextTokensUsed"`
-	Conditions        []metav1.Condition      `json:"conditions,omitempty"`
+	ContextTokensUsed int64              `json:"contextTokensUsed"`
+	Conditions        []metav1.Condition `json:"conditions,omitempty"`
 }
 
 type AgentInstancePhase string

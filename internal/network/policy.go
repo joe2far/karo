@@ -115,7 +115,7 @@ func (pm *PolicyManager) ensureCiliumPolicy(ctx context.Context, sandbox *karov1
 			map[string]interface{}{
 				"matchLabels": map[string]interface{}{
 					"k8s:io.kubernetes.pod.namespace": "kube-system",
-					"k8s:k8s-app":                    "kube-dns",
+					"k8s:k8s-app":                     "kube-dns",
 				},
 			},
 		},

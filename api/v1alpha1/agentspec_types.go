@@ -6,16 +6,16 @@ import (
 )
 
 // +kubebuilder:validation:XValidation:rule="self.scaling.maxInstances >= self.scaling.minInstances",message="maxInstances must be >= minInstances"
-// +kubebuilder:validation:XValidation:rule="self.runtime.image != ''",message="runtime.image is required"
+// +kubebuilder:validation:XValidation:rule="self.runtime.image != ”",message="runtime.image is required"
 type AgentSpecSpec struct {
-	ModelConfigRef       corev1.LocalObjectReference  `json:"modelConfigRef"`
-	SystemPrompt         SystemPromptConfig           `json:"systemPrompt"`
+	ModelConfigRef corev1.LocalObjectReference `json:"modelConfigRef"`
+	SystemPrompt   SystemPromptConfig          `json:"systemPrompt"`
 	// +kubebuilder:validation:MinItems=1
-	Capabilities         []AgentCapability            `json:"capabilities"`
-	AgentConfigFiles     []AgentConfigFile            `json:"agentConfigFiles,omitempty"`
-	MemoryRef            *corev1.LocalObjectReference `json:"memoryRef,omitempty"`
-	ToolSetRef           *corev1.LocalObjectReference `json:"toolSetRef,omitempty"`
-	SandboxClassRef      *corev1.LocalObjectReference `json:"sandboxClassRef,omitempty"`
+	Capabilities     []AgentCapability            `json:"capabilities"`
+	AgentConfigFiles []AgentConfigFile            `json:"agentConfigFiles,omitempty"`
+	MemoryRef        *corev1.LocalObjectReference `json:"memoryRef,omitempty"`
+	ToolSetRef       *corev1.LocalObjectReference `json:"toolSetRef,omitempty"`
+	SandboxClassRef  *corev1.LocalObjectReference `json:"sandboxClassRef,omitempty"`
 	// GatewayRef points at a native Gateway API resource
 	// (gateway.networking.k8s.io/v1 Gateway) running the agentgateway.dev
 	// data plane. Used as a namespace default for both LLM and MCP
@@ -26,25 +26,25 @@ type AgentSpecSpec struct {
 	WorkspaceCredentials *WorkspaceCredentialsConfig  `json:"workspaceCredentials,omitempty"`
 	Runtime              RuntimeConfig                `json:"runtime"`
 	// +kubebuilder:validation:Minimum=0
-	MaxContextTokens     int64                        `json:"maxContextTokens,omitempty"`
+	MaxContextTokens int64 `json:"maxContextTokens,omitempty"`
 	// +kubebuilder:validation:Enum=restart;checkpoint;terminate
-	OnContextExhaustion  string                       `json:"onContextExhaustion,omitempty"`
-	Dispatchable         bool                         `json:"dispatchable"`
-	Scaling              AgentScaling                 `json:"scaling,omitempty"`
+	OnContextExhaustion string       `json:"onContextExhaustion,omitempty"`
+	Dispatchable        bool         `json:"dispatchable"`
+	Scaling             AgentScaling `json:"scaling,omitempty"`
 }
 
 // +kubebuilder:validation:XValidation:rule="self.maxInstances >= self.minInstances",message="maxInstances must be >= minInstances"
 type AgentScaling struct {
 	// +kubebuilder:validation:Minimum=0
-	MinInstances    int32       `json:"minInstances"`
+	MinInstances int32 `json:"minInstances"`
 	// +kubebuilder:validation:Minimum=0
 	// +kubebuilder:validation:Maximum=100
-	MaxInstances    int32       `json:"maxInstances"`
+	MaxInstances int32 `json:"maxInstances"`
 	// +kubebuilder:validation:Enum=OnDemand;Immediate
 	// +kubebuilder:default=OnDemand
-	StartPolicy     StartPolicy `json:"startPolicy,omitempty"`
+	StartPolicy StartPolicy `json:"startPolicy,omitempty"`
 	// +kubebuilder:validation:Minimum=0
-	CooldownSeconds int32       `json:"cooldownSeconds,omitempty"`
+	CooldownSeconds int32 `json:"cooldownSeconds,omitempty"`
 }
 
 type StartPolicy string
@@ -63,10 +63,10 @@ type AgentCapability struct {
 
 type AgentConfigFile struct {
 	// +kubebuilder:validation:MinLength=1
-	Name      string           `json:"name"`
+	Name string `json:"name"`
 	// +kubebuilder:validation:MinLength=1
 	MountPath string           `json:"mountPath"`
-	Source    ConfigFileSource  `json:"source"`
+	Source    ConfigFileSource `json:"source"`
 }
 
 type ConfigFileSource struct {
@@ -79,17 +79,17 @@ type WorkspaceCredentialsConfig struct {
 
 type GitCredential struct {
 	// +kubebuilder:validation:MinLength=1
-	Name             string                   `json:"name"`
+	Name string `json:"name"`
 	// +kubebuilder:validation:Enum=token;ssh
-	Type             string                   `json:"type"`
+	Type string `json:"type"`
 	// +kubebuilder:validation:MinLength=1
 	Host             string                   `json:"host"`
 	CredentialSecret corev1.SecretKeySelector `json:"credentialSecret"`
 	// +kubebuilder:validation:Enum=push;pull;read
-	Scope            string                   `json:"scope"`
+	Scope string `json:"scope"`
 }
 
-// +kubebuilder:validation:XValidation:rule="(has(self.inline) && self.inline != '') || has(self.configMapRef)",message="either inline (non-empty) or configMapRef must be set"
+// +kubebuilder:validation:XValidation:rule="(has(self.inline) && self.inline != ”) || has(self.configMapRef)",message="either inline (non-empty) or configMapRef must be set"
 type SystemPromptConfig struct {
 	Inline       string           `json:"inline,omitempty"`
 	ConfigMapRef *ConfigMapKeyRef `json:"configMapRef,omitempty"`
@@ -99,23 +99,23 @@ type ConfigMapKeyRef struct {
 	// +kubebuilder:validation:MinLength=1
 	Name string `json:"name"`
 	// +kubebuilder:validation:MinLength=1
-	Key  string `json:"key"`
+	Key string `json:"key"`
 }
 
 type RuntimeConfig struct {
 	// +kubebuilder:validation:MinLength=1
-	Image     string                       `json:"image"`
-	Resources corev1.ResourceRequirements  `json:"resources,omitempty"`
+	Image     string                      `json:"image"`
+	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
 }
 
 type AgentSpecStatus struct {
-	Phase                string             `json:"phase,omitempty"`
-	ActiveInstances      int32              `json:"activeInstances,omitempty"`
-	DesiredInstances     int32              `json:"desiredInstances,omitempty"`
-	IdleInstances        int32              `json:"idleInstances,omitempty"`
-	HibernatedInstances  int32              `json:"hibernatedInstances,omitempty"`
-	LastUpdated          *metav1.Time       `json:"lastUpdated,omitempty"`
-	Conditions           []metav1.Condition `json:"conditions,omitempty"`
+	Phase               string             `json:"phase,omitempty"`
+	ActiveInstances     int32              `json:"activeInstances,omitempty"`
+	DesiredInstances    int32              `json:"desiredInstances,omitempty"`
+	IdleInstances       int32              `json:"idleInstances,omitempty"`
+	HibernatedInstances int32              `json:"hibernatedInstances,omitempty"`
+	LastUpdated         *metav1.Time       `json:"lastUpdated,omitempty"`
+	Conditions          []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // +kubebuilder:object:root=true

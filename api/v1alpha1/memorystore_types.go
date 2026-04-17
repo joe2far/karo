@@ -7,15 +7,15 @@ import (
 
 // +kubebuilder:validation:XValidation:rule="self.backend.type != 'mem0' || has(self.backend.mem0)",message="mem0 config is required when backend type is mem0"
 type MemoryStoreSpec struct {
-	Backend       MemoryBackend                 `json:"backend"`
+	Backend MemoryBackend `json:"backend"`
 	// +kubebuilder:validation:Enum=agent-local;team;org
-	Scope         MemoryScope                   `json:"scope"`
-	BoundAgents   []corev1.LocalObjectReference `json:"boundAgents,omitempty"`
+	Scope       MemoryScope                   `json:"scope"`
+	BoundAgents []corev1.LocalObjectReference `json:"boundAgents,omitempty"`
 	// +kubebuilder:validation:Minimum=1
-	RetentionDays int32                         `json:"retentionDays,omitempty"`
+	RetentionDays int32 `json:"retentionDays,omitempty"`
 	// +kubebuilder:validation:Minimum=0
-	MaxMemories   int64                         `json:"maxMemories,omitempty"`
-	Categories    []string                      `json:"categories,omitempty"`
+	MaxMemories int64    `json:"maxMemories,omitempty"`
+	Categories  []string `json:"categories,omitempty"`
 }
 
 type MemoryBackend struct {
@@ -25,11 +25,11 @@ type MemoryBackend struct {
 }
 
 type Mem0Config struct {
-	APIKeySecret   corev1.SecretKeySelector `json:"apiKeySecret"`
+	APIKeySecret corev1.SecretKeySelector `json:"apiKeySecret"`
 	// +kubebuilder:validation:MinLength=1
-	OrganizationID string                   `json:"organizationId"`
+	OrganizationID string `json:"organizationId"`
 	// +kubebuilder:validation:MinLength=1
-	ProjectID      string                   `json:"projectId"`
+	ProjectID string `json:"projectId"`
 }
 
 type MemoryScope string

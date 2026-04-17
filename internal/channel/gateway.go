@@ -1,12 +1,12 @@
 // Package channel implements the webhook gateway pattern for AgentChannel.
 //
 // Architecture: Each AgentChannel CRD causes the controller to create:
-//   1. A Deployment running the karo-channel-gateway image
-//   2. A Service exposing the gateway on port 8443
-//   3. The gateway handles inbound webhooks (Slack, Discord, Telegram, etc.)
-//      and converts them to KARO TaskGraph/Mailbox operations
-//   4. The gateway also posts outbound messages (task results, approval
-//      requests) to the configured platform
+//  1. A Deployment running the karo-channel-gateway image
+//  2. A Service exposing the gateway on port 8443
+//  3. The gateway handles inbound webhooks (Slack, Discord, Telegram, etc.)
+//     and converts them to KARO TaskGraph/Mailbox operations
+//  4. The gateway also posts outbound messages (task results, approval
+//     requests) to the configured platform
 //
 // This follows the "sidecar-as-deployment" pattern used by OpenClaw and
 // similar frameworks — one gateway per channel, managed by the operator.
