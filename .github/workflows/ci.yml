@@ -1,0 +1,117 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.59.1
+          args: --timeout=5m
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go build
+        run: go build ./...
+
+      - name: Unit tests
+        run: go test $(go list ./... | grep -v /e2e) -coverprofile cover.out
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: cover.out
+          if-no-files-found: ignore
+
+  helm-lint:
+    name: Helm Lint & Template
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.15.3
+
+      - name: Helm lint
+        run: helm lint charts/karo
+
+      - name: Helm template
+        run: helm template karo charts/karo --namespace karo-system > /tmp/rendered.yaml
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rendered-manifests
+          path: /tmp/rendered.yaml
+
+  docker-build:
+    name: Docker Build (${{ matrix.image.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - name: karo-operator
+            dockerfile: Dockerfile
+            context: .
+          - name: karo-agent-runtime-mcp
+            dockerfile: Dockerfile.runtime-mcp
+            context: .
+          - name: karo-harness-claude-code
+            dockerfile: harness/claude-code/Dockerfile
+            context: harness/claude-code
+          - name: karo-harness-goose
+            dockerfile: harness/goose/Dockerfile
+            context: harness/goose
+          - name: karo-harness-claw-code
+            dockerfile: harness/claw-code/Dockerfile
+            context: harness/claw-code
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.image.context }}
+          file: ${{ matrix.image.dockerfile }}
+          push: false
+          platforms: linux/amd64
+          cache-from: type=gha,scope=${{ matrix.image.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image.name }}

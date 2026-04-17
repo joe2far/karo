@@ -1,0 +1,251 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (without leading v, e.g. 0.4.0-alpha)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAMESPACE: ${{ github.repository_owner }}
+
+jobs:
+  meta:
+    name: Compute version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
+
+  images:
+    name: Build & Push ${{ matrix.image.name }}
+    needs: meta
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - name: karo-operator
+            dockerfile: Dockerfile
+            context: .
+          - name: karo-agent-runtime-mcp
+            dockerfile: Dockerfile.runtime-mcp
+            context: .
+          - name: karo-harness-claude-code
+            dockerfile: harness/claude-code/Dockerfile
+            context: harness/claude-code
+          - name: karo-harness-goose
+            dockerfile: harness/goose/Dockerfile
+            context: harness/goose
+          - name: karo-harness-claw-code
+            dockerfile: harness/claw-code/Dockerfile
+            context: harness/claw-code
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.image.name }}
+          tags: |
+            type=raw,value=${{ needs.meta.outputs.version }}
+            type=raw,value=latest
+            type=semver,pattern={{version}},value=${{ needs.meta.outputs.tag }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.meta.outputs.tag }}
+          labels: |
+            org.opencontainers.image.title=${{ matrix.image.name }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ needs.meta.outputs.version }}
+            org.opencontainers.image.licenses=Apache-2.0
+
+      - name: Build & Push
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.image.context }}
+          file: ${{ matrix.image.dockerfile }}
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.image.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image.name }}
+          provenance: true
+          sbom: true
+
+  chart:
+    name: Package & Publish Helm Chart
+    needs: [meta, images]
+    runs-on: ubuntu-latest
+    outputs:
+      chart-file: ${{ steps.package.outputs.chart-file }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.15.3
+
+      - name: Log in to GHCR (Helm)
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ${{ env.REGISTRY }} \
+            --username ${{ github.actor }} --password-stdin
+
+      - name: Set chart + app versions
+        run: |
+          VERSION="${{ needs.meta.outputs.version }}"
+          sed -i "s/^version:.*/version: ${VERSION}/" charts/karo/Chart.yaml
+          sed -i "s/^appVersion:.*/appVersion: \"${VERSION}\"/" charts/karo/Chart.yaml
+
+      - name: Pin image tag in values.yaml
+        run: |
+          VERSION="${{ needs.meta.outputs.version }}"
+          sed -i "s|^\(\s*repository:\).*|\1 ghcr.io/${{ env.IMAGE_NAMESPACE }}/karo-operator|" charts/karo/values.yaml
+          sed -i "s|^\(\s*tag:\).*|\1 \"${VERSION}\"|" charts/karo/values.yaml
+
+      - name: Helm lint
+        run: helm lint charts/karo
+
+      - name: Package chart
+        id: package
+        run: |
+          mkdir -p dist
+          helm package charts/karo --destination dist
+          CHART_FILE=$(ls dist/karo-*.tgz)
+          echo "chart-file=${CHART_FILE}" >> "$GITHUB_OUTPUT"
+
+      - name: Push chart to GHCR (OCI)
+        run: |
+          helm push "${{ steps.package.outputs.chart-file }}" \
+            "oci://${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/charts"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: helm-chart
+          path: dist/*.tgz
+
+  install-manifest:
+    name: Build install.yaml
+    needs: [meta, chart]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.15.3
+
+      - name: Set chart + app versions
+        run: |
+          VERSION="${{ needs.meta.outputs.version }}"
+          sed -i "s/^version:.*/version: ${VERSION}/" charts/karo/Chart.yaml
+          sed -i "s/^appVersion:.*/appVersion: \"${VERSION}\"/" charts/karo/Chart.yaml
+          sed -i "s|^\(\s*repository:\).*|\1 ghcr.io/${{ env.IMAGE_NAMESPACE }}/karo-operator|" charts/karo/values.yaml
+          sed -i "s|^\(\s*tag:\).*|\1 \"${VERSION}\"|" charts/karo/values.yaml
+
+      - name: Render install.yaml
+        run: |
+          mkdir -p dist
+          helm template karo charts/karo \
+            --namespace karo-system \
+            --include-crds \
+            > dist/install.yaml
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: install-manifest
+          path: dist/install.yaml
+
+  release:
+    name: Create GitHub Release
+    needs: [meta, images, chart, install-manifest]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: helm-chart
+          path: dist
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: install-manifest
+          path: dist
+
+      - name: Generate checksums
+        run: |
+          cd dist
+          sha256sum * > checksums.txt
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.meta.outputs.tag }}
+          name: ${{ needs.meta.outputs.tag }}
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(needs.meta.outputs.version, '-') }}
+          body: |
+            ## KARO ${{ needs.meta.outputs.tag }}
+
+            ### Container images (ghcr.io/${{ env.IMAGE_NAMESPACE }})
+            - `karo-operator:${{ needs.meta.outputs.version }}`
+            - `karo-agent-runtime-mcp:${{ needs.meta.outputs.version }}`
+            - `karo-harness-claude-code:${{ needs.meta.outputs.version }}`
+            - `karo-harness-goose:${{ needs.meta.outputs.version }}`
+            - `karo-harness-claw-code:${{ needs.meta.outputs.version }}`
+
+            ### Helm chart
+            Pull from GHCR (OCI):
+            ```
+            helm pull oci://ghcr.io/${{ env.IMAGE_NAMESPACE }}/charts/karo --version ${{ needs.meta.outputs.version }}
+            ```
+            Or install directly:
+            ```
+            helm install karo oci://ghcr.io/${{ env.IMAGE_NAMESPACE }}/charts/karo \
+              --version ${{ needs.meta.outputs.version }} \
+              --namespace karo-system --create-namespace
+            ```
+
+            ### Install without Helm
+            ```
+            kubectl create namespace karo-system
+            kubectl apply -f https://github.com/${{ github.repository }}/releases/download/${{ needs.meta.outputs.tag }}/install.yaml
+            ```
+          files: |
+            dist/*.tgz
+            dist/install.yaml
+            dist/checksums.txt

@@ -148,6 +148,40 @@ docker-build: ## Build docker image with the manager.
 docker-push: ## Push docker image with the manager.
 	$(CONTAINER_TOOL) push ${IMG}
 
+# Image registry defaults for auxiliary images. Override on the command line.
+REGISTRY        ?= ghcr.io/joe2far
+VERSION_TAG     ?= dev
+MCP_IMG         ?= $(REGISTRY)/karo-agent-runtime-mcp:$(VERSION_TAG)
+HARNESS_CC_IMG  ?= $(REGISTRY)/karo-harness-claude-code:$(VERSION_TAG)
+HARNESS_GS_IMG  ?= $(REGISTRY)/karo-harness-goose:$(VERSION_TAG)
+HARNESS_CW_IMG  ?= $(REGISTRY)/karo-harness-claw-code:$(VERSION_TAG)
+
+.PHONY: docker-build-runtime-mcp
+docker-build-runtime-mcp: ## Build the agent-runtime-mcp sidecar image.
+	$(CONTAINER_TOOL) build -f Dockerfile.runtime-mcp -t $(MCP_IMG) .
+
+.PHONY: docker-build-harnesses
+docker-build-harnesses: ## Build all harness images.
+	$(CONTAINER_TOOL) build -t $(HARNESS_CC_IMG) harness/claude-code
+	$(CONTAINER_TOOL) build -t $(HARNESS_GS_IMG) harness/goose
+	$(CONTAINER_TOOL) build -t $(HARNESS_CW_IMG) harness/claw-code
+
+.PHONY: docker-build-all
+docker-build-all: docker-build docker-build-runtime-mcp docker-build-harnesses ## Build every image in the repo.
+
+.PHONY: helm-lint
+helm-lint: ## Lint the Helm chart.
+	helm lint charts/karo
+
+.PHONY: helm-package
+helm-package: ## Package the Helm chart into dist/.
+	mkdir -p dist
+	helm package charts/karo --destination dist
+
+.PHONY: helm-template
+helm-template: ## Render the Helm chart (includes CRDs).
+	helm template karo charts/karo --namespace karo-system --include-crds
+
 # PLATFORMS defines the target platforms for the manager image be built to provide support to multiple
 # architectures. (i.e. make docker-buildx IMG=myregistry/mypoperator:0.0.1). To use this option you need to:
 # - be able to use docker buildx. More info: https://docs.docker.com/build/buildx/
