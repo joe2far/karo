@@ -34,11 +34,12 @@ import (
 	"strings"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	karov1alpha1 "github.com/joe2far/karo/api/v1alpha1"
 )
@@ -78,11 +79,20 @@ func HTTPRouteGVK() schema.GroupVersionKind {
 }
 
 // Translator is the ModelConfig/ToolSet → agentgateway.dev resource bridge.
+//
+// Takes a scheme so OwnerReference GVK resolution can round-trip typed
+// objects via apiutil.GVKForObject (typed objects fetched by client.Get
+// have an empty TypeMeta; we must resolve the GVK via the scheme).
 type Translator struct {
 	client client.Client
+	scheme *runtime.Scheme
 }
 
-func NewTranslator(c client.Client) *Translator { return &Translator{client: c} }
+// NewTranslator builds a translator. The scheme must have the KARO v1alpha1
+// types registered so OwnerReference GVK lookup works.
+func NewTranslator(c client.Client, scheme *runtime.Scheme) *Translator {
+	return &Translator{client: c, scheme: scheme}
+}
 
 // BackendNameForModel returns the AgentgatewayBackend object name used for a
 // given ModelConfig. Deterministic so reconciliation is idempotent.
@@ -137,7 +147,7 @@ func (t *Translator) EnsureModelConfigResources(ctx context.Context, mc *karov1a
 		RouteNameForModel(mc), mc.Namespace, mc.Spec.GatewayRef.Name,
 		ModelPathFor(mc),
 		BackendNameForModel(mc),
-		ownerLabels(mc.Kind, mc.Name),
+		ownerLabels("ModelConfig", mc.Name),
 	)
 	if err := t.applyOwned(ctx, route, mc); err != nil {
 		return "", fmt.Errorf("apply HTTPRoute: %w", err)
@@ -146,27 +156,83 @@ func (t *Translator) EnsureModelConfigResources(ctx context.Context, mc *karov1a
 }
 
 // EnsureToolSetResources creates or updates AgentgatewayBackend objects for
-// each tool in the ToolSet plus a single HTTPRoute that fans out sub-paths to
-// the right backends.
-func (t *Translator) EnsureToolSetResources(ctx context.Context, ts *karov1alpha1.ToolSet) (string, error) {
+// each tool in the ToolSet plus a single HTTPRoute that fans out sub-paths
+// to the right backends. After applying the desired set, stale backends
+// for tools that were removed from ts.Spec.Tools are pruned by listing
+// everything labelled as owned by this ToolSet and deleting anything not
+// in the desired set.
+//
+// Returns the gateway-facing endpoint and a boolean indicating whether any
+// routable tools were rendered (false = all tools were stdio and the caller
+// should surface Degraded).
+func (t *Translator) EnsureToolSetResources(ctx context.Context, ts *karov1alpha1.ToolSet) (string, bool, error) {
 	if ts.Spec.GatewayRef == nil {
-		return "", nil
+		return "", false, nil
 	}
+
+	desired := map[string]struct{}{}
+	var skippedStdio []string
 	for i := range ts.Spec.Tools {
 		tool := &ts.Spec.Tools[i]
+		if tool.Transport == karov1alpha1.MCPTransportStdio {
+			skippedStdio = append(skippedStdio, tool.Name)
+			continue
+		}
 		backend, err := t.buildToolBackend(ts, tool)
 		if err != nil {
-			return "", fmt.Errorf("tool %q: %w", tool.Name, err)
+			return "", false, fmt.Errorf("tool %q: %w", tool.Name, err)
 		}
 		if err := t.applyOwned(ctx, backend, ts); err != nil {
-			return "", fmt.Errorf("tool %q: apply backend: %w", tool.Name, err)
+			return "", false, fmt.Errorf("tool %q: apply backend: %w", tool.Name, err)
 		}
+		desired[BackendNameForTool(ts, tool.Name)] = struct{}{}
 	}
+
+	if err := t.pruneOrphanToolBackends(ctx, ts, desired); err != nil {
+		return "", false, fmt.Errorf("prune orphan backends: %w", err)
+	}
+
+	// If every tool in the set is stdio, we produce no HTTPRoute — an
+	// empty rules list is rejected by the Gateway API validator. Clean up
+	// any previous route and signal Degraded to the caller.
+	if len(desired) == 0 {
+		_ = t.deleteIgnoreNotFound(ctx, newEmpty(HTTPRouteGVK(), RouteNameForToolSet(ts), ts.Namespace))
+		return "", false, fmt.Errorf("no routable tools in ToolSet (skipped stdio: %v)", skippedStdio)
+	}
+
 	route := t.buildToolSetRoute(ts)
 	if err := t.applyOwned(ctx, route, ts); err != nil {
-		return "", fmt.Errorf("apply HTTPRoute: %w", err)
+		return "", false, fmt.Errorf("apply HTTPRoute: %w", err)
 	}
-	return gatewayEndpoint(ts.Namespace, ts.Spec.GatewayRef.Name, ToolSetPathFor(ts)), nil
+	return gatewayEndpoint(ts.Namespace, ts.Spec.GatewayRef.Name, ToolSetPathFor(ts)), true, nil
+}
+
+// pruneOrphanToolBackends lists every AgentgatewayBackend labelled as owned
+// by this ToolSet and deletes any whose name is not in the desired set. Used
+// to GC backends for tools that were removed from ts.Spec.Tools.
+func (t *Translator) pruneOrphanToolBackends(ctx context.Context, ts *karov1alpha1.ToolSet, desired map[string]struct{}) error {
+	list := &unstructured.UnstructuredList{}
+	list.SetGroupVersionKind(schema.GroupVersionKind{
+		Group: agentgatewayGroup, Version: agentgatewayVersion, Kind: backendKind + "List",
+	})
+	if err := t.client.List(ctx, list,
+		client.InNamespace(ts.Namespace),
+		client.MatchingLabels{
+			labelOwnerKind: "toolset",
+			labelOwnerName: ts.Name,
+		}); err != nil {
+		return err
+	}
+	for i := range list.Items {
+		item := &list.Items[i]
+		if _, keep := desired[item.GetName()]; keep {
+			continue
+		}
+		if err := t.client.Delete(ctx, item); err != nil && !apierrors.IsNotFound(err) {
+			return fmt.Errorf("delete orphan %q: %w", item.GetName(), err)
+		}
+	}
+	return nil
 }
 
 // CleanupModelConfigResources deletes the generated Backend + Route — used
@@ -269,7 +335,7 @@ func (t *Translator) buildModelBackend(mc *karov1alpha1.ModelConfig) (*unstructu
 
 	u := newEmpty(AgentgatewayBackendGVK(), BackendNameForModel(mc), mc.Namespace)
 	u.Object["spec"] = spec
-	u.SetLabels(ownerLabels(mc.Kind, mc.Name))
+	u.SetLabels(ownerLabels("ModelConfig", mc.Name))
 	return u, nil
 }
 
@@ -301,7 +367,7 @@ func (t *Translator) buildToolBackend(ts *karov1alpha1.ToolSet, tool *karov1alph
 	}
 	u := newEmpty(AgentgatewayBackendGVK(), BackendNameForTool(ts, tool.Name), ts.Namespace)
 	u.Object["spec"] = spec
-	u.SetLabels(ownerLabels(ts.Kind, ts.Name))
+	u.SetLabels(ownerLabels("ToolSet", ts.Name))
 	return u, nil
 }
 
@@ -384,7 +450,7 @@ func (t *Translator) buildToolSetRoute(ts *karov1alpha1.ToolSet) *unstructured.U
 	}
 	u := newEmpty(HTTPRouteGVK(), RouteNameForToolSet(ts), ts.Namespace)
 	u.Object["spec"] = spec
-	u.SetLabels(ownerLabels(ts.Kind, ts.Name))
+	u.SetLabels(ownerLabels("ToolSet", ts.Name))
 	return u
 }
 
@@ -395,8 +461,15 @@ func (t *Translator) buildToolSetRoute(ts *karov1alpha1.ToolSet) *unstructured.U
 // applyOwned upserts the given unstructured object with the supplied KARO
 // owner attached. Uses a two-step get/create-or-update because server-side
 // apply would require a field manager registration we don't need yet.
+//
+// The OwnerReference is set via controllerutil.SetControllerReference which
+// resolves the owner's GVK through the scheme — typed objects fetched by
+// client.Get have empty TypeMeta, so `owner.GetObjectKind()` alone returns
+// an empty GVK and yields a broken OwnerReference.
 func (t *Translator) applyOwned(ctx context.Context, desired *unstructured.Unstructured, owner client.Object) error {
-	setOwnerRef(desired, owner)
+	if err := controllerutil.SetControllerReference(owner, desired, t.scheme); err != nil {
+		return fmt.Errorf("set owner reference: %w", err)
+	}
 	key := types.NamespacedName{Name: desired.GetName(), Namespace: desired.GetNamespace()}
 	existing := &unstructured.Unstructured{}
 	existing.SetGroupVersionKind(desired.GroupVersionKind())
@@ -409,7 +482,11 @@ func (t *Translator) applyOwned(ctx context.Context, desired *unstructured.Unstr
 	}
 	existing.Object["spec"] = desired.Object["spec"]
 	mergeLabels(existing, desired.GetLabels())
-	mergeOwnerRefs(existing, desired.GetOwnerReferences())
+	// Re-assert the owner reference on the existing object too, in case it
+	// was created before the scheme fix landed or got stripped by a user.
+	if err := controllerutil.SetControllerReference(owner, existing, t.scheme); err != nil {
+		return fmt.Errorf("set owner reference on existing: %w", err)
+	}
 	return t.client.Update(ctx, existing)
 }
 
@@ -430,33 +507,15 @@ func newEmpty(gvk schema.GroupVersionKind, name, namespace string) *unstructured
 	return u
 }
 
+// ownerLabels returns the labels applied to every generated resource so
+// downstream tooling can list-by-owner and we can prune orphans on tool
+// removal. kind is lowercased for label-value compliance.
 func ownerLabels(kind, name string) map[string]string {
 	return map[string]string{
 		labelManagedBy: karoManager,
 		labelOwnerKind: strings.ToLower(kind),
 		labelOwnerName: name,
 	}
-}
-
-func setOwnerRef(obj client.Object, owner client.Object) {
-	ownerGVK := owner.GetObjectKind().GroupVersionKind()
-	controller := true
-	blockOwner := true
-	refs := obj.GetOwnerReferences()
-	for _, r := range refs {
-		if r.UID == owner.GetUID() {
-			return
-		}
-	}
-	refs = append(refs, metav1.OwnerReference{
-		APIVersion:         ownerGVK.GroupVersion().String(),
-		Kind:               ownerGVK.Kind,
-		Name:               owner.GetName(),
-		UID:                owner.GetUID(),
-		Controller:         &controller,
-		BlockOwnerDeletion: &blockOwner,
-	})
-	obj.SetOwnerReferences(refs)
 }
 
 func mergeLabels(obj *unstructured.Unstructured, in map[string]string) {
@@ -468,23 +527,6 @@ func mergeLabels(obj *unstructured.Unstructured, in map[string]string) {
 		labels[k] = v
 	}
 	obj.SetLabels(labels)
-}
-
-func mergeOwnerRefs(obj *unstructured.Unstructured, in []metav1.OwnerReference) {
-	refs := obj.GetOwnerReferences()
-	for _, ref := range in {
-		found := false
-		for _, r := range refs {
-			if r.UID == ref.UID {
-				found = true
-				break
-			}
-		}
-		if !found {
-			refs = append(refs, ref)
-		}
-	}
-	obj.SetOwnerReferences(refs)
 }
 
 func gatewayEndpoint(namespace, gatewayName, path string) string {

@@ -109,7 +109,7 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "SandboxClass")
 		os.Exit(1)
 	}
-	gatewayTranslator := gateway.NewTranslator(mgr.GetClient())
+	gatewayTranslator := gateway.NewTranslator(mgr.GetClient(), mgr.GetScheme())
 
 	if err = (&controller.ModelConfigReconciler{
 		Client:            mgr.GetClient(),

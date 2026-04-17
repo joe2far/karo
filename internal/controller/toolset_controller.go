@@ -44,9 +44,16 @@ func (r *ToolSetReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// Handle deletion.
+	// Handle deletion — explicitly clean up generated agentgateway
+	// resources before removing the finalizer.
 	if !toolSet.DeletionTimestamp.IsZero() {
 		if controllerutil.ContainsFinalizer(&toolSet, toolSetFinalizer) {
+			if r.GatewayTranslator != nil {
+				if err := r.GatewayTranslator.CleanupToolSetResources(ctx, &toolSet); err != nil {
+					logger.Error(err, "failed to clean up gateway resources on delete")
+					return ctrl.Result{}, err
+				}
+			}
 			controllerutil.RemoveFinalizer(&toolSet, toolSetFinalizer)
 			if err := r.Update(ctx, &toolSet); err != nil {
 				return ctrl.Result{}, err
@@ -184,15 +191,22 @@ func (r *ToolSetReconciler) reconcileGateway(ctx context.Context, ts *karov1alph
 		return
 	}
 
-	endpoint, err := r.GatewayTranslator.EnsureToolSetResources(ctx, ts)
+	endpoint, routable, err := r.GatewayTranslator.EnsureToolSetResources(ctx, ts)
 	if err != nil {
 		ts.Status.Phase = "Degraded"
+		reason := "TranslationFailed"
+		if !routable {
+			// No routable tools (all stdio). Everything else reconciled
+			// successfully — this is a configuration problem, not a
+			// controller fault.
+			reason = "NoRoutableTools"
+		}
 		setCondition(&ts.Status.Conditions, metav1.Condition{
 			Type:               "GatewayWired",
 			Status:             metav1.ConditionFalse,
 			ObservedGeneration: ts.Generation,
 			LastTransitionTime: metav1.Now(),
-			Reason:             "TranslationFailed",
+			Reason:             reason,
 			Message:            fmt.Sprintf("failed to render gateway resources: %v", err),
 		})
 		r.Recorder.Event(ts, corev1.EventTypeWarning, "GatewayTranslationFailed", err.Error())

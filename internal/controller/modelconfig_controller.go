@@ -42,9 +42,18 @@ func (r *ModelConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// Handle deletion.
+	// Handle deletion — explicitly clean up generated agentgateway
+	// resources before removing the finalizer. OwnerReferences would
+	// normally cascade-delete, but running cleanup here is defence in
+	// depth and matches the behaviour for `gatewayRef` clearing.
 	if !modelConfig.DeletionTimestamp.IsZero() {
 		if controllerutil.ContainsFinalizer(&modelConfig, modelConfigFinalizer) {
+			if r.GatewayTranslator != nil {
+				if err := r.GatewayTranslator.CleanupModelConfigResources(ctx, &modelConfig); err != nil {
+					logger.Error(err, "failed to clean up gateway resources on delete")
+					return ctrl.Result{}, err
+				}
+			}
 			controllerutil.RemoveFinalizer(&modelConfig, modelConfigFinalizer)
 			if err := r.Update(ctx, &modelConfig); err != nil {
 				return ctrl.Result{}, err
@@ -159,14 +168,17 @@ func (r *ModelConfigReconciler) reconcileGateway(ctx context.Context, mc *karov1
 		return
 	}
 
-	// gatewayRef cleared — clean up any previously generated resources and
-	// strip the endpoint/condition.
+	// gatewayRef cleared — clean up any previously generated resources.
+	// Only zero the ResolvedEndpoint if this controller previously owned
+	// it (evidenced by a GatewayWired condition); otherwise we'd clobber
+	// an endpoint set by some other code path.
 	if mc.Spec.GatewayRef == nil {
 		if err := r.GatewayTranslator.CleanupModelConfigResources(ctx, mc); err != nil {
 			logger.Error(err, "failed to clean up gateway resources")
 		}
-		mc.Status.ResolvedEndpoint = ""
-		// Remove the condition so dashboards don't show stale state.
+		if hasCondition(mc.Status.Conditions, "GatewayWired") {
+			mc.Status.ResolvedEndpoint = ""
+		}
 		removeCondition(&mc.Status.Conditions, "GatewayWired")
 		return
 	}
@@ -236,6 +248,17 @@ func removeCondition(conditions *[]metav1.Condition, t string) {
 		}
 	}
 	*conditions = filtered
+}
+
+// hasCondition reports whether the conditions slice carries a condition of
+// the given Type, regardless of its Status.
+func hasCondition(conditions []metav1.Condition, t string) bool {
+	for _, c := range conditions {
+		if c.Type == t {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *ModelConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
