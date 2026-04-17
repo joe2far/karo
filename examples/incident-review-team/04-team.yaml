@@ -1,0 +1,77 @@
+---
+# Agent Team: Weekly Incident Review team
+apiVersion: karo.dev/v1alpha1
+kind: AgentTeam
+metadata:
+  name: incident-review-team
+  namespace: incident-review
+spec:
+  description: >-
+    Cron-triggered team that runs every Monday morning to review all incident
+    issues from the past week in Jira. Performs detailed analysis of each
+    incident, identifies trends, adds summary comments to Jira issues, and
+    publishes a weekly report with follow-up items to Confluence.
+
+  agents:
+    - agentSpecRef:
+        name: review-coordinator
+      role: orchestrator
+    - agentSpecRef:
+        name: incident-analyst
+      role: executor
+    - agentSpecRef:
+        name: report-writer
+      role: executor
+
+  sharedResources:
+    memoryRef:
+      name: incident-review-memory
+    toolSetRef:
+      name: incident-review-tools
+    sandboxClassRef:
+      name: incident-review-sandbox
+    modelConfigRef:
+      name: claude-sonnet
+
+  dispatcherRef:
+    name: incident-review-router
+
+  policyRef:
+    name: incident-review-policy
+
+  loopRef:
+    name: weekly-incident-review
+---
+# Dispatcher: routes incident review tasks
+apiVersion: karo.dev/v1alpha1
+kind: Dispatcher
+metadata:
+  name: incident-review-router
+  namespace: incident-review
+spec:
+  mode: capability
+
+  taskGraphSelector:
+    matchLabels:
+      team: incident-review
+
+  capabilityRoutes:
+    - capability: design
+      agentSpecRef:
+        name: review-coordinator
+    - capability: impl
+      agentSpecRef:
+        name: incident-analyst
+    - capability: eval
+      agentSpecRef:
+        name: incident-analyst
+    - capability: review
+      agentSpecRef:
+        name: review-coordinator
+
+  fallbackAgentSpecRef:
+    name: review-coordinator
+
+  messaging:
+    type: mailbox
+    mailboxPattern: "{agentSpec}-mailbox"

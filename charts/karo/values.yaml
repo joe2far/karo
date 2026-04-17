@@ -1,7 +1,7 @@
 replicaCount: 2
 
 image:
-  repository: ghcr.io/karo-dev/karo-operator
+  repository: ghcr.io/joe2far/karo-operator
   tag: "0.4.0-alpha"
   pullPolicy: IfNotPresent
 

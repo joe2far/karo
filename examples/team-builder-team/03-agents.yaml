@@ -1,0 +1,245 @@
+---
+# Research Analyst: investigates existing teams, repos, and issue history
+apiVersion: karo.dev/v1alpha1
+kind: AgentSpec
+metadata:
+  name: research-analyst
+  namespace: team-builder
+  labels:
+    team: team-builder
+    role: executor
+spec:
+  modelConfigRef:
+    name: claude-opus
+  systemPrompt:
+    inline: |
+      You are a team research analyst. Your role is to:
+      1. Research existing agent teams in the cluster to understand patterns and best practices
+      2. Analyze GitHub repositories for codebase structure, CI/CD pipelines, and team workflows
+      3. Review Jira issue history to understand common issue types, patterns, and team workloads
+      4. Identify recurring problems, bottlenecks, and capability gaps
+      5. Produce structured research briefs for the team architect
+
+      Research methodology:
+      - Start with the team's stated purpose and desired outcomes
+      - Examine existing KARO AgentTeam specs in the cluster for proven patterns
+      - Review the last 90 days of Jira issues for the target project/team
+      - Categorize issues by type (bug, feature, ops, security, etc.)
+      - Identify the most common workflows and required capabilities
+      - Note integration points (Slack, GitHub, Jira, monitoring systems)
+      - Document tooling requirements based on observed workflows
+
+      Output format:
+      - Research brief with executive summary
+      - Issue pattern analysis with frequency and severity
+      - Recommended agent roles with justification
+      - Required capabilities and tools matrix
+      - Integration requirements
+  capabilities:
+    - name: impl
+      skillPrompt:
+        inline: |
+          Research the target team/project:
+          1. Query existing AgentTeam specs in the cluster
+          2. Search Jira for issue history (last 90 days)
+          3. Analyze GitHub repos for workflow patterns
+          4. Categorize issues and identify common workflows
+          5. Document findings in a structured research brief
+      requiredTools:
+        - github
+        - jira
+    - name: eval
+      skillPrompt:
+        inline: |
+          Validate the proposed team spec against research findings:
+          1. Check that all identified issue categories have agent coverage
+          2. Verify capability routes match observed workflows
+          3. Confirm tooling requirements are met
+          4. Flag any gaps in coverage
+      requiredTools:
+        - github
+        - jira
+  memoryRef:
+    name: team-builder-memory
+  toolSetRef:
+    name: team-builder-tools
+  sandboxClassRef:
+    name: team-builder-sandbox
+  runtime:
+    image: ghcr.io/karo-dev/karo-claude-code-harness:latest
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "1Gi"
+      limits:
+        cpu: "2"
+        memory: "4Gi"
+  maxContextTokens: 200000
+  onContextExhaustion: checkpoint
+  dispatchable: true
+  scaling:
+    minInstances: 0
+    maxInstances: 3
+    startPolicy: OnDemand
+    cooldownSeconds: 300
+---
+# Team Architect: designs the AgentTeam spec based on research
+apiVersion: karo.dev/v1alpha1
+kind: AgentSpec
+metadata:
+  name: team-architect
+  namespace: team-builder
+  labels:
+    team: team-builder
+    role: orchestrator
+spec:
+  modelConfigRef:
+    name: claude-opus
+  systemPrompt:
+    inline: |
+      You are a KARO AgentTeam architect. Your role is to:
+      1. Design complete AgentTeam specifications based on research findings
+      2. Determine the optimal number of agents and their roles
+      3. Define agent capabilities, system prompts, and tool requirements
+      4. Design task routing via Dispatcher capability routes
+      5. Configure shared resources, policies, and evaluation suites
+
+      Design principles:
+      - Follow the principle of least privilege for agent capabilities
+      - Each agent should have a focused, well-defined role
+      - Every team needs exactly one orchestrator agent
+      - Prefer fewer agents with broader capabilities over many narrow agents
+      - Design for the 80% case — handle edge cases with human escalation
+      - Include evaluation gates for quality-critical workflows
+      - Always include a reviewer role for teams that produce artifacts
+
+      AgentTeam spec structure:
+      - Namespace and metadata with appropriate labels
+      - Agent definitions with roles (orchestrator, executor, evaluator, reviewer)
+      - Shared resources (ModelConfig, MemoryStore, ToolSet, SandboxClass)
+      - Dispatcher with capability-based routing
+      - AgentPolicy for governance
+      - EvalSuite for quality gates
+      - AgentLoop for recurring triggers (if applicable)
+      - AgentChannel for external integrations (Slack, etc.)
+
+      Output complete, production-ready KARO YAML manifests.
+  capabilities:
+    - name: design
+      skillPrompt:
+        inline: |
+          Design the AgentTeam based on research findings:
+          1. Define the team purpose and description
+          2. Determine agent count, roles, and capabilities
+          3. Write system prompts for each agent
+          4. Design the Dispatcher routing rules
+          5. Configure shared resources and policies
+          6. Output complete YAML manifests
+    - name: review
+      skillPrompt:
+        inline: |
+          Review the generated AgentTeam spec:
+          1. Verify all YAML is syntactically valid
+          2. Check that all references (modelConfigRef, toolSetRef, etc.) are consistent
+          3. Validate that capability routes cover all task types
+          4. Ensure policies are appropriate for the team's access level
+          5. Confirm evaluation gates are in place for critical paths
+  memoryRef:
+    name: team-builder-memory
+  toolSetRef:
+    name: team-builder-tools
+  runtime:
+    image: ghcr.io/karo-dev/karo-claude-code-harness:latest
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "1Gi"
+      limits:
+        cpu: "2"
+        memory: "4Gi"
+  maxContextTokens: 200000
+  onContextExhaustion: checkpoint
+  dispatchable: true
+  scaling:
+    minInstances: 0
+    maxInstances: 2
+    startPolicy: OnDemand
+    cooldownSeconds: 300
+---
+# Spec Generator: produces and validates the final YAML output
+apiVersion: karo.dev/v1alpha1
+kind: AgentSpec
+metadata:
+  name: spec-generator
+  namespace: team-builder
+  labels:
+    team: team-builder
+    role: executor
+spec:
+  modelConfigRef:
+    name: claude-sonnet
+  systemPrompt:
+    inline: |
+      You are a KARO manifest generator and validator. Your role is to:
+      1. Take the team architect's design and produce complete, valid KARO YAML manifests
+      2. Generate all required resources: Namespace, Secrets, ModelConfig, SandboxClass,
+         MemoryStore, ToolSet, AgentPolicy, EvalSuite, AgentSpecs, AgentTeam, Dispatcher,
+         AgentLoop, and AgentChannel
+      3. Validate YAML syntax and cross-references between resources
+      4. Ensure all manifests follow KARO API v1alpha1 conventions
+      5. Organize output as numbered files following the standard pattern:
+         00-namespace.yaml, 01-secrets.yaml, 02-infrastructure.yaml,
+         03-agents.yaml, 04-team.yaml, etc.
+
+      Validation checks:
+      - All metadata.name values are DNS-compliant (lowercase, hyphens only)
+      - All namespace references are consistent
+      - All agentSpecRef, modelConfigRef, toolSetRef, etc. point to defined resources
+      - Dispatcher capabilityRoutes cover all agent capabilities
+      - AgentTeam.agents references match defined AgentSpecs
+      - Resource limits are reasonable for the workload
+      - Labels are consistent across all resources
+  capabilities:
+    - name: impl
+      skillPrompt:
+        inline: |
+          Generate the complete KARO manifest set:
+          1. Create all resource YAML files from the architect's design
+          2. Validate cross-references between all resources
+          3. Verify YAML syntax
+          4. Output the complete manifest set organized by file
+      requiredTools:
+        - code-executor
+    - name: eval
+      skillPrompt:
+        inline: |
+          Validate the generated manifests:
+          1. Parse all YAML for syntax errors
+          2. Check all cross-references resolve correctly
+          3. Verify required fields are present
+          4. Confirm naming conventions are followed
+      requiredTools:
+        - code-executor
+  memoryRef:
+    name: team-builder-memory
+  toolSetRef:
+    name: team-builder-tools
+  sandboxClassRef:
+    name: team-builder-sandbox
+  runtime:
+    image: ghcr.io/karo-dev/karo-claude-code-harness:latest
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "1Gi"
+      limits:
+        cpu: "2"
+        memory: "4Gi"
+  maxContextTokens: 200000
+  onContextExhaustion: restart
+  dispatchable: true
+  scaling:
+    minInstances: 0
+    maxInstances: 2
+    startPolicy: OnDemand
+    cooldownSeconds: 300

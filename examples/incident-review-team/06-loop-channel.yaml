@@ -1,0 +1,61 @@
+---
+# AgentLoop: trigger weekly incident review every Monday at 9am
+apiVersion: karo.dev/v1alpha1
+kind: AgentLoop
+metadata:
+  name: weekly-incident-review
+  namespace: incident-review
+spec:
+  agentSpecRef:
+    name: review-coordinator
+
+  triggers:
+    - type: cron
+      schedule: "0 9 * * 1"     # Every Monday at 9:00 AM UTC
+
+  dispatcherRef:
+    name: incident-review-router
+
+  contextCarryover: true         # Carry over prior week context for trend tracking
+---
+# AgentChannel: Slack for incident review notifications
+apiVersion: karo.dev/v1alpha1
+kind: AgentChannel
+metadata:
+  name: incident-review-slack
+  namespace: incident-review
+spec:
+  platform:
+    type: slack
+    slack:
+      appCredentialSecret:
+        name: slack-app-credentials
+        key: BOT_TOKEN
+      signingSecret:
+        name: slack-signing-secret
+        key: SIGNING_SECRET
+      channelId: "C0INCIDENT-REVIEW"
+
+  inbound:
+    defaultTeamRef:
+      name: incident-review-team
+    mode: auto
+    autoRoute:
+      modelConfigRef:
+        name: claude-sonnet
+      classificationPrompt:
+        inline: |
+          Classify the incoming message as one of: ad-hoc-review, follow-up-check, or general.
+          If it asks to review a specific incident or run an off-cycle review — classify as ad-hoc-review.
+          If it asks about follow-up status or prior reports — classify as follow-up-check.
+          Otherwise classify as general.
+
+  outbound:
+    notifyOn:
+      - taskGraphCreated
+      - taskGraphCompleted
+      - taskFailed
+    format: detailed
+
+  approvals:
+    enabled: false               # Automated weekly process, no approvals needed

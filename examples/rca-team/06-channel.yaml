@@ -1,0 +1,46 @@
+---
+# AgentChannel: Slack for RCA team requests
+apiVersion: karo.dev/v1alpha1
+kind: AgentChannel
+metadata:
+  name: rca-slack
+  namespace: rca-team
+spec:
+  platform:
+    type: slack
+    slack:
+      appCredentialSecret:
+        name: slack-app-credentials
+        key: BOT_TOKEN
+      signingSecret:
+        name: slack-signing-secret
+        key: SIGNING_SECRET
+      channelId: "C0RCA-TEAM"
+
+  inbound:
+    defaultTeamRef:
+      name: rca-team
+    mode: auto
+    autoRoute:
+      modelConfigRef:
+        name: claude-sonnet
+      classificationPrompt:
+        inline: |
+          Classify the incoming message as one of: rca-request, rca-status, or general.
+          If it provides a Slack channel name (e.g., #inc-*) and asks for an RCA — classify as rca-request.
+          If it asks about the status of an ongoing RCA — classify as rca-status.
+          Otherwise classify as general.
+
+  outbound:
+    notifyOn:
+      - taskGraphCreated
+      - taskGraphCompleted
+      - taskFailed
+      - approvalRequired
+    format: detailed
+
+  approvals:
+    enabled: true
+    style: interactive
+    timeoutMinutes: 120
+    onTimeout: Fail

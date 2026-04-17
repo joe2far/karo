@@ -1,0 +1,250 @@
+---
+# TaskGraph: Remediate a Wiz finding (CVE in a dependency)
+apiVersion: karo.dev/v1alpha1
+kind: TaskGraph
+metadata:
+  name: wiz-finding-cve-2026-12345
+  namespace: security-team
+  labels:
+    team: security
+    type: wiz-remediation
+    severity: High
+spec:
+  description: |
+    Remediate Wiz finding for CVE-2026-12345: critical vulnerability in lodash < 4.17.21.
+    Jira issue: SEC-4567
+    Wiz finding ID: wiz-abc-123
+    CVSS: 7.5 (High)
+    Affected services: payment-api, user-service, notification-service
+
+  ownerAgentRef:
+    name: security-lead
+
+  dispatcherRef:
+    name: security-router
+
+  tasks:
+    - id: triage-finding
+      title: "Triage Wiz finding and create remediation plan"
+      type: design
+      description: |
+        Review the Jira issue SEC-4567 for the Wiz finding:
+        1. Read the complete Wiz finding details from the Jira issue
+        2. Extract: CVE ID, CVSS score, affected package, affected version range
+        3. Identify all affected repositories and services
+        4. Determine remediation priority based on severity
+        5. Check team memory for prior remediations of the same package
+        6. Create a task for each affected repository
+
+        Expected finding details in the Jira issue:
+        - CVE: CVE-2026-12345
+        - Package: lodash
+        - Affected versions: < 4.17.21
+        - Fix version: >= 4.17.21
+        - Severity: High (CVSS 7.5)
+        - Type: Prototype Pollution
+        - Affected images: payment-api:latest, user-service:latest, notification-service:latest
+      deps: []
+      priority: High
+      addedBy: security-lead
+      addedAt: "2026-04-01T14:00:00Z"
+      timeoutMinutes: 30
+      acceptanceCriteria:
+        - "All affected repositories identified"
+        - "CVE details extracted and verified"
+        - "Remediation priority set"
+        - "Per-repo tasks created"
+
+    - id: analyze-payment-api
+      title: "Analyze lodash dependency in payment-api"
+      type: eval
+      description: |
+        Analyze the lodash dependency in the payment-api repository:
+        1. Find the dependency declaration (package.json, package-lock.json)
+        2. Determine if lodash is direct or transitive
+        3. If transitive: identify the parent package(s)
+        4. Check current version vs fix version
+        5. Review lodash changelog for breaking changes between versions
+        6. Identify any code changes needed for the upgrade
+        7. Document the upgrade plan
+      deps: [triage-finding]
+      priority: High
+      addedBy: security-lead
+      addedAt: "2026-04-01T14:00:00Z"
+      timeoutMinutes: 30
+      acceptanceCriteria:
+        - "Dependency type identified (direct/transitive)"
+        - "Upgrade path determined"
+        - "Breaking changes assessed"
+
+    - id: analyze-user-service
+      title: "Analyze lodash dependency in user-service"
+      type: eval
+      description: |
+        Analyze the lodash dependency in the user-service repository:
+        1. Find the dependency declaration
+        2. Determine if direct or transitive
+        3. Check current version vs fix version
+        4. Review for breaking changes
+        5. Document the upgrade plan
+      deps: [triage-finding]
+      priority: High
+      addedBy: security-lead
+      addedAt: "2026-04-01T14:00:00Z"
+      timeoutMinutes: 30
+      acceptanceCriteria:
+        - "Dependency type identified"
+        - "Upgrade path determined"
+        - "Breaking changes assessed"
+
+    - id: analyze-notification-service
+      title: "Analyze lodash dependency in notification-service"
+      type: eval
+      description: |
+        Analyze the lodash dependency in the notification-service repository:
+        1. Find the dependency declaration
+        2. Determine if direct or transitive
+        3. Check current version vs fix version
+        4. Review for breaking changes
+        5. Document the upgrade plan
+      deps: [triage-finding]
+      priority: High
+      addedBy: security-lead
+      addedAt: "2026-04-01T14:00:00Z"
+      timeoutMinutes: 30
+      acceptanceCriteria:
+        - "Dependency type identified"
+        - "Upgrade path determined"
+        - "Breaking changes assessed"
+
+    - id: fix-payment-api
+      title: "Upgrade lodash in payment-api"
+      type: impl
+      description: |
+        Implement the lodash upgrade in payment-api:
+        1. Create branch: security/CVE-2026-12345-lodash-fix
+        2. Update lodash to >= 4.17.21 in package.json
+        3. Run npm install to regenerate package-lock.json
+        4. Run tests (npm test)
+        5. Create PR with security remediation template
+        6. Link PR to Jira issue SEC-4567
+      deps: [analyze-payment-api]
+      priority: High
+      addedBy: security-lead
+      addedAt: "2026-04-01T14:00:00Z"
+      timeoutMinutes: 60
+      acceptanceCriteria:
+        - "Dependency updated to safe version"
+        - "Lockfile regenerated"
+        - "Tests pass"
+        - "PR created and linked to Jira"
+
+    - id: fix-user-service
+      title: "Upgrade lodash in user-service"
+      type: impl
+      description: |
+        Implement the lodash upgrade in user-service:
+        1. Create branch: security/CVE-2026-12345-lodash-fix
+        2. Update lodash to >= 4.17.21
+        3. Regenerate lockfile
+        4. Run tests
+        5. Create PR with security remediation template
+        6. Link PR to Jira issue SEC-4567
+      deps: [analyze-user-service]
+      priority: High
+      addedBy: security-lead
+      addedAt: "2026-04-01T14:00:00Z"
+      timeoutMinutes: 60
+      acceptanceCriteria:
+        - "Dependency updated"
+        - "Tests pass"
+        - "PR created and linked to Jira"
+
+    - id: fix-notification-service
+      title: "Upgrade lodash in notification-service"
+      type: impl
+      description: |
+        Implement the lodash upgrade in notification-service:
+        1. Create branch: security/CVE-2026-12345-lodash-fix
+        2. Update lodash to >= 4.17.21
+        3. Regenerate lockfile
+        4. Run tests
+        5. Create PR with security remediation template
+        6. Link PR to Jira issue SEC-4567
+      deps: [analyze-notification-service]
+      priority: High
+      addedBy: security-lead
+      addedAt: "2026-04-01T14:00:00Z"
+      timeoutMinutes: 60
+      acceptanceCriteria:
+        - "Dependency updated"
+        - "Tests pass"
+        - "PR created and linked to Jira"
+
+    - id: verify-remediation
+      title: "Verify all remediations address the CVE"
+      type: eval
+      description: |
+        Verify the remediation is complete:
+        1. Check each PR updates lodash to a version >= 4.17.21
+        2. Verify no other vulnerable lodash versions in lockfiles
+        3. Confirm tests pass in all PRs
+        4. Validate PRs follow the security remediation template
+        5. Check for any remaining transitive vulnerable paths
+      deps: [fix-payment-api, fix-user-service, fix-notification-service]
+      priority: High
+      addedBy: security-lead
+      addedAt: "2026-04-01T14:00:00Z"
+      timeoutMinutes: 30
+      evalGate:
+        evalSuiteRef:
+          name: security-evals
+        minPassRate: 0.80
+        onFail: Reopen
+      acceptanceCriteria:
+        - "All PRs verified against CVE fix"
+        - "No remaining vulnerable versions"
+        - "All tests pass"
+
+    - id: review-and-update-jira
+      title: "Review and update Jira with remediation results"
+      type: review
+      description: |
+        Final review and Jira update:
+        1. Review all PRs for completeness
+        2. Update Jira issue SEC-4567 with:
+           - Links to all PRs created
+           - Summary of changes made per repo
+           - Test results
+           - Remaining steps (PR review and merge by humans)
+        3. Transition the Jira issue to "In Review"
+        4. Post summary to Slack
+      deps: [verify-remediation]
+      priority: High
+      addedBy: security-lead
+      addedAt: "2026-04-01T14:00:00Z"
+      timeoutMinutes: 30
+      acceptanceCriteria:
+        - "Jira issue updated with PR links"
+        - "Jira transitioned to In Review"
+        - "Slack notification sent"
+
+    - id: approval-merge
+      title: "Human approval to merge security PRs"
+      type: approval
+      description: |
+        Request human approval to merge the security remediation PRs.
+        All PRs have been reviewed by the security team and tests pass.
+      deps: [review-and-update-jira]
+      priority: High
+      addedBy: security-lead
+      addedAt: "2026-04-01T14:00:00Z"
+
+  dispatchPolicy:
+    maxConcurrent: 5             # Analyze and fix repos in parallel
+    defaultTimeoutMinutes: 60
+    retryPolicy:
+      maxRetries: 2
+      backoffSeconds: 60
+      onExhaustion: EscalateToHuman
+    allowAgentMutation: true

@@ -1,0 +1,75 @@
+---
+# Agent Team: RCA team
+apiVersion: karo.dev/v1alpha1
+kind: AgentTeam
+metadata:
+  name: rca-team
+  namespace: rca-team
+spec:
+  description: >-
+    RCA (Root Cause Analysis) team that, when prompted with a Slack incident
+    channel, reviews all channel content, cross-references with PagerDuty and
+    Jira, and produces a detailed RCA Google Doc following the organization's
+    standard template. Includes timeline, root cause analysis, impact assessment,
+    and follow-up action items with Jira tickets.
+
+  agents:
+    - agentSpecRef:
+        name: rca-lead
+      role: orchestrator
+    - agentSpecRef:
+        name: channel-investigator
+      role: executor
+    - agentSpecRef:
+        name: rca-author
+      role: executor
+
+  sharedResources:
+    memoryRef:
+      name: rca-memory
+    toolSetRef:
+      name: rca-tools
+    sandboxClassRef:
+      name: rca-sandbox
+    modelConfigRef:
+      name: claude-sonnet
+
+  dispatcherRef:
+    name: rca-router
+
+  policyRef:
+    name: rca-policy
+---
+# Dispatcher: routes RCA tasks
+apiVersion: karo.dev/v1alpha1
+kind: Dispatcher
+metadata:
+  name: rca-router
+  namespace: rca-team
+spec:
+  mode: capability
+
+  taskGraphSelector:
+    matchLabels:
+      team: rca
+
+  capabilityRoutes:
+    - capability: design
+      agentSpecRef:
+        name: rca-lead
+    - capability: impl
+      agentSpecRef:
+        name: channel-investigator
+    - capability: eval
+      agentSpecRef:
+        name: rca-author
+    - capability: review
+      agentSpecRef:
+        name: rca-lead
+
+  fallbackAgentSpecRef:
+    name: rca-lead
+
+  messaging:
+    type: mailbox
+    mailboxPattern: "{agentSpec}-mailbox"

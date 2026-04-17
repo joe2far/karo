@@ -1,0 +1,18 @@
+# GKE Autopilot + Vertex AI — Example values
+# Copy this file to terraform.tfvars and fill in your values.
+
+project_id   = "my-gcp-project"
+region       = "us-central1"
+cluster_name = "karo-cluster"
+
+# Vertex AI model
+vertex_ai_model = "gemini-4.0-flash"
+
+# Agent credentials (optional — leave empty to skip secret creation)
+github_token         = ""
+mem0_api_key         = ""
+slack_bot_token      = ""
+slack_signing_secret = ""
+
+# Set to true to deploy the example dev team
+enable_example_agents = true

@@ -148,55 +148,52 @@ docker-build: ## Build docker image with the manager.
 docker-push: ## Push docker image with the manager.
 	$(CONTAINER_TOOL) push ${IMG}
 
-##@ Harness Images
+# Image registry defaults for auxiliary images. Override on the command line.
+REGISTRY        ?= ghcr.io/joe2far
+VERSION_TAG     ?= dev
+MCP_IMG         ?= $(REGISTRY)/karo-agent-runtime-mcp:$(VERSION_TAG)
+HARNESS_CC_IMG  ?= $(REGISTRY)/karo-harness-claude-code:$(VERSION_TAG)
+HARNESS_GS_IMG  ?= $(REGISTRY)/karo-harness-goose:$(VERSION_TAG)
+HARNESS_CW_IMG  ?= $(REGISTRY)/karo-harness-claw-code:$(VERSION_TAG)
 
-HARNESS_REGISTRY ?= ghcr.io/karo-dev
-HARNESS_VERSION ?= $(VERSION)
+.PHONY: docker-build-runtime-mcp
+docker-build-runtime-mcp: ## Build the agent-runtime-mcp sidecar image.
+	$(CONTAINER_TOOL) build -f Dockerfile.runtime-mcp -t $(MCP_IMG) .
 
-.PHONY: docker-build-goose-harness
-docker-build-goose-harness: ## Build Goose harness image
-	$(CONTAINER_TOOL) build -t $(HARNESS_REGISTRY)/goose-harness:$(HARNESS_VERSION) \
-		-t $(HARNESS_REGISTRY)/goose-harness:latest \
-		-f harness/goose/Dockerfile harness/goose/
-
-.PHONY: docker-build-claude-code-harness
-docker-build-claude-code-harness: ## Build Claude Code harness image
-	$(CONTAINER_TOOL) build -t $(HARNESS_REGISTRY)/claude-code-harness:$(HARNESS_VERSION) \
-		-t $(HARNESS_REGISTRY)/claude-code-harness:latest \
-		-f harness/claude-code/Dockerfile harness/claude-code/
-
-.PHONY: docker-build-claw-code-harness
-docker-build-claw-code-harness: ## Build Claw Code harness image
-	$(CONTAINER_TOOL) build -t $(HARNESS_REGISTRY)/claw-code-harness:$(HARNESS_VERSION) \
-		-t $(HARNESS_REGISTRY)/claw-code-harness:latest \
-		-f harness/claw-code/Dockerfile harness/claw-code/
+.PHONY: docker-push-runtime-mcp
+docker-push-runtime-mcp: ## Push the agent-runtime-mcp sidecar image.
+	$(CONTAINER_TOOL) push $(MCP_IMG)
 
 .PHONY: docker-build-harnesses
-docker-build-harnesses: docker-build-goose-harness docker-build-claude-code-harness docker-build-claw-code-harness ## Build all harness images
-
-.PHONY: docker-push-goose-harness
-docker-push-goose-harness: ## Push Goose harness image
-	$(CONTAINER_TOOL) push $(HARNESS_REGISTRY)/goose-harness:$(HARNESS_VERSION)
-	$(CONTAINER_TOOL) push $(HARNESS_REGISTRY)/goose-harness:latest
-
-.PHONY: docker-push-claude-code-harness
-docker-push-claude-code-harness: ## Push Claude Code harness image
-	$(CONTAINER_TOOL) push $(HARNESS_REGISTRY)/claude-code-harness:$(HARNESS_VERSION)
-	$(CONTAINER_TOOL) push $(HARNESS_REGISTRY)/claude-code-harness:latest
-
-.PHONY: docker-push-claw-code-harness
-docker-push-claw-code-harness: ## Push Claw Code harness image
-	$(CONTAINER_TOOL) push $(HARNESS_REGISTRY)/claw-code-harness:$(HARNESS_VERSION)
-	$(CONTAINER_TOOL) push $(HARNESS_REGISTRY)/claw-code-harness:latest
+docker-build-harnesses: ## Build all harness images.
+	$(CONTAINER_TOOL) build -t $(HARNESS_CC_IMG) harness/claude-code
+	$(CONTAINER_TOOL) build -t $(HARNESS_GS_IMG) harness/goose
+	$(CONTAINER_TOOL) build -t $(HARNESS_CW_IMG) harness/claw-code
 
 .PHONY: docker-push-harnesses
-docker-push-harnesses: docker-push-goose-harness docker-push-claude-code-harness docker-push-claw-code-harness ## Push all harness images
+docker-push-harnesses: ## Push all harness images.
+	$(CONTAINER_TOOL) push $(HARNESS_CC_IMG)
+	$(CONTAINER_TOOL) push $(HARNESS_GS_IMG)
+	$(CONTAINER_TOOL) push $(HARNESS_CW_IMG)
 
 .PHONY: docker-build-all
-docker-build-all: docker-build docker-build-harnesses ## Build operator and all harness images
+docker-build-all: docker-build docker-build-runtime-mcp docker-build-harnesses ## Build every image in the repo.
 
 .PHONY: docker-push-all
-docker-push-all: docker-push docker-push-harnesses ## Push operator and all harness images
+docker-push-all: docker-push docker-push-runtime-mcp docker-push-harnesses ## Push every image in the repo.
+
+.PHONY: helm-lint
+helm-lint: ## Lint the Helm chart.
+	helm lint charts/karo
+
+.PHONY: helm-package
+helm-package: ## Package the Helm chart into dist/.
+	mkdir -p dist
+	helm package charts/karo --destination dist
+
+.PHONY: helm-template
+helm-template: ## Render the Helm chart (includes CRDs).
+	helm template karo charts/karo --namespace karo-system --include-crds
 
 # PLATFORMS defines the target platforms for the manager image be built to provide support to multiple
 # architectures. (i.e. make docker-buildx IMG=myregistry/mypoperator:0.0.1). To use this option you need to:

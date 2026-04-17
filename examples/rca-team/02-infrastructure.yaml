@@ -1,0 +1,260 @@
+---
+# ModelConfig: Claude Opus for deep analysis and report writing
+apiVersion: karo.dev/v1alpha1
+kind: ModelConfig
+metadata:
+  name: claude-opus
+  namespace: rca-team
+spec:
+  provider: anthropic
+  name: claude-opus-4-20250514
+  apiKeySecret:
+    name: anthropic-api-key
+    key: ANTHROPIC_API_KEY
+  parameters:
+    maxTokens: 16384
+    temperature: 0.1         # Precise analysis
+---
+# ModelConfig: Claude Sonnet for data gathering tasks
+apiVersion: karo.dev/v1alpha1
+kind: ModelConfig
+metadata:
+  name: claude-sonnet
+  namespace: rca-team
+spec:
+  provider: anthropic
+  name: claude-sonnet-4-20250514
+  apiKeySecret:
+    name: anthropic-api-key
+    key: ANTHROPIC_API_KEY
+  parameters:
+    maxTokens: 8192
+    temperature: 0.1
+---
+# SandboxClass: access to Slack, Google, Jira APIs
+apiVersion: karo.dev/v1alpha1
+kind: SandboxClass
+metadata:
+  name: rca-sandbox
+  namespace: rca-team
+spec:
+  runtimeClassName: gvisor
+  networkPolicy:
+    egress: restricted
+    allowedDomains:
+      - "*.slack.com"
+      - "*.googleapis.com"
+      - "docs.google.com"
+      - "www.googleapis.com"
+      - "oauth2.googleapis.com"
+      - "*.atlassian.net"
+      - "*.jira.com"
+      - "*.pagerduty.com"
+    allowedCIDRs:
+      - "10.0.0.0/8"
+  filesystem:
+    readOnlyRootFilesystem: false
+    allowedMounts:
+      - /tmp
+      - /workspace
+  resourceLimits:
+    cpu: "2"
+    memory: "4Gi"
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    allowPrivilegeEscalation: false
+    seccompProfile:
+      type: RuntimeDefault
+    capabilities:
+      drop:
+        - ALL
+---
+# MemoryStore: RCA knowledge base and prior RCA templates
+apiVersion: karo.dev/v1alpha1
+kind: MemoryStore
+metadata:
+  name: rca-memory
+  namespace: rca-team
+spec:
+  backend:
+    type: mem0
+    mem0:
+      apiKeySecret:
+        name: mem0-api-key
+        key: API_KEY
+      organizationId: "platform-org"
+      projectId: "rca-team"
+  scope: team
+  retentionDays: 730           # 2 years of RCA history
+  maxMemories: 50000
+  categories:
+    - rca-document
+    - incident-timeline
+    - root-cause
+    - follow-up-items
+    - template-patterns
+    - service-history
+---
+# ToolSet: Slack, Google Docs, Jira, PagerDuty tools
+apiVersion: karo.dev/v1alpha1
+kind: ToolSet
+metadata:
+  name: rca-tools
+  namespace: rca-team
+spec:
+  tools:
+    - name: slack
+      type: mcp
+      transport: streamable-http
+      endpoint: "http://slack-mcp-server.rca-team.svc:8080"
+      permissions:
+        - channels:history
+        - channels:read
+        - users:read
+        - reactions:read
+        - files:read
+      credentialSecret:
+        name: slack-app-credentials
+        key: BOT_TOKEN
+
+    - name: google-docs
+      type: mcp
+      transport: streamable-http
+      endpoint: "http://google-docs-mcp-server.rca-team.svc:8080"
+      permissions:
+        - documents:create
+        - documents:write
+        - documents:read
+        - drive:read
+      credentialSecret:
+        name: google-workspace-credentials
+        key: SERVICE_ACCOUNT_KEY
+
+    - name: jira
+      type: mcp
+      transport: streamable-http
+      endpoint: "http://jira-mcp-server.rca-team.svc:8080"
+      permissions:
+        - read
+        - create
+        - comment
+      credentialSecret:
+        name: jira-mcp-credentials
+        key: JIRA_TOKEN
+
+    - name: pagerduty
+      type: mcp
+      transport: streamable-http
+      endpoint: "http://pagerduty-mcp-server.rca-team.svc:8080"
+      permissions:
+        - incidents:read
+        - services:read
+        - log_entries:read
+      credentialSecret:
+        name: pagerduty-mcp-credentials
+        key: API_TOKEN
+
+    - name: code-executor
+      type: mcp
+      transport: stdio
+      command: ["/usr/local/bin/code-exec-mcp"]
+      permissions:
+        - execute
+      sandboxRequired: true
+
+  policyRef:
+    name: rca-policy
+---
+# AgentPolicy: RCA governance
+apiVersion: karo.dev/v1alpha1
+kind: AgentPolicy
+metadata:
+  name: rca-policy
+  namespace: rca-team
+spec:
+  targetSelector:
+    matchLabels:
+      team: rca
+
+  models:
+    allowedProviders:
+      - anthropic
+    requireMinContextWindow: 100000
+
+  toolCalls:
+    maxPerMinute: 120
+    maxPerLoop: 1000
+    requireSandboxForExecute: true
+
+  loop:
+    maxIterationsPerRun: 200
+    maxRunDurationMinutes: 240
+    requireHumanApprovalAfterIterations: 100
+
+  taskGraph:
+    allowMutation: true
+    mutationScope:
+      - addTask
+      - closeTask
+    denyMutation:
+      - deleteTask
+    requireAuditTrail: true
+
+  audit:
+    enabled: true
+    logLevel: Full
+    logDestination:
+      type: stdout
+    retentionDays: 730
+
+  dataClassification:
+    allowedLevels:
+      - internal
+      - confidential
+    denyPatterns:
+      - ".*password.*"
+      - ".*secret.*"
+      - ".*private.?key.*"
+
+  escalation:
+    onPolicyViolation: Block
+---
+# EvalSuite: RCA quality gates
+apiVersion: karo.dev/v1alpha1
+kind: EvalSuite
+metadata:
+  name: rca-evals
+  namespace: rca-team
+spec:
+  agentSpecRef:
+    name: rca-author
+  evalCases:
+    - id: timeline-complete
+      description: "RCA timeline covers detection through resolution"
+      assertions:
+        - type: llm-judge
+          criteria: "The timeline includes: when the issue started, when it was detected, key investigation steps, mitigation actions, and resolution with timestamps"
+          judgeModelConfigRef:
+            name: claude-sonnet
+    - id: root-cause-evidenced
+      description: "Root cause is identified with supporting evidence"
+      assertions:
+        - type: llm-judge
+          criteria: "The root cause analysis identifies a specific cause supported by evidence from Slack messages, metrics, logs, or other data sources"
+          judgeModelConfigRef:
+            name: claude-sonnet
+    - id: follow-ups-actionable
+      description: "Follow-up items are specific, assigned, and have deadlines"
+      assertions:
+        - type: llm-judge
+          criteria: "Each follow-up item includes: what needs to be done, who should do it, priority, and a suggested deadline. Items should address both immediate fixes and systemic prevention"
+          judgeModelConfigRef:
+            name: claude-sonnet
+    - id: matches-template
+      description: "RCA document follows the organization's standard template"
+      assertions:
+        - type: llm-judge
+          criteria: "The document includes all standard RCA sections: Executive Summary, Incident Details, Timeline, Root Cause Analysis, Impact Assessment, Mitigation Steps, Follow-up Actions, and Lessons Learned"
+          judgeModelConfigRef:
+            name: claude-sonnet

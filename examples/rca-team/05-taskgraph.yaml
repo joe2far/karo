@@ -1,0 +1,172 @@
+---
+# TaskGraph: RCA for a specific incident channel
+apiVersion: karo.dev/v1alpha1
+kind: TaskGraph
+metadata:
+  name: rca-2026-0401-payment-outage
+  namespace: rca-team
+  labels:
+    team: rca
+    type: rca
+    severity: P1
+spec:
+  description: |
+    Create an RCA document for the payment service outage.
+    Slack incident channel: #inc-2026-0401-payment-outage
+    PagerDuty incident: PD-12345
+
+  ownerAgentRef:
+    name: rca-lead
+
+  dispatcherRef:
+    name: rca-router
+
+  tasks:
+    - id: plan-investigation
+      title: "Plan the RCA investigation"
+      type: design
+      description: |
+        Review the incident Slack channel and plan the RCA investigation:
+        1. Read the initial messages in #inc-2026-0401-payment-outage to understand scope
+        2. Identify the PagerDuty incident ID and severity
+        3. Determine which services were affected
+        4. Create the investigation plan with specific data collection tasks
+        5. Identify prior RCA documents for the same service(s)
+      deps: []
+      priority: High
+      addedBy: rca-lead
+      addedAt: "2026-04-02T10:00:00Z"
+      timeoutMinutes: 30
+      acceptanceCriteria:
+        - "Incident scope identified"
+        - "Data sources listed"
+        - "Investigation plan created"
+
+    - id: investigate-channel
+      title: "Read and process the full Slack channel"
+      type: impl
+      description: |
+        Read the complete history of #inc-2026-0401-payment-outage:
+        1. Read all messages from channel creation to resolution
+        2. Follow all thread replies for detailed discussions
+        3. Extract chronological events with timestamps
+        4. Identify all participants and their roles/actions
+        5. Capture key decisions with context and rationale
+        6. Note shared files, screenshots, dashboard links
+        7. Identify the incident commander, key responders
+
+        Produce a comprehensive channel investigation report.
+      deps: [plan-investigation]
+      priority: High
+      addedBy: rca-lead
+      addedAt: "2026-04-02T10:00:00Z"
+      timeoutMinutes: 90
+      acceptanceCriteria:
+        - "All messages processed"
+        - "Chronological events extracted with timestamps"
+        - "Participants and roles identified"
+        - "Key decisions documented"
+
+    - id: cross-reference-pagerduty
+      title: "Cross-reference with PagerDuty incident data"
+      type: eval
+      description: |
+        Query PagerDuty for incident PD-12345:
+        1. Get the official incident timeline (created, acknowledged, resolved)
+        2. Retrieve the escalation chain and who was paged
+        3. Get log entries for all actions taken
+        4. Compare PagerDuty timeline with Slack channel timeline
+        5. Fill in any gaps in the timeline
+        6. Note any discrepancies between PagerDuty and Slack accounts
+      deps: [plan-investigation]
+      priority: High
+      addedBy: rca-lead
+      addedAt: "2026-04-02T10:00:00Z"
+      timeoutMinutes: 30
+      acceptanceCriteria:
+        - "PagerDuty timeline retrieved"
+        - "Escalation chain documented"
+        - "Gaps in Slack timeline filled"
+
+    - id: check-prior-rcas
+      title: "Review prior RCA documents for patterns"
+      type: eval
+      description: |
+        Search for prior RCA documents:
+        1. Query Google Drive for prior RCAs involving payment-service
+        2. Search team memory for past root causes and follow-ups
+        3. Check if any prior follow-up items could have prevented this
+        4. Identify recurring patterns or systemic issues
+        5. Retrieve the latest RCA template format for consistency
+      deps: [plan-investigation]
+      priority: Medium
+      addedBy: rca-lead
+      addedAt: "2026-04-02T10:00:00Z"
+      timeoutMinutes: 30
+      acceptanceCriteria:
+        - "Prior RCAs reviewed"
+        - "Recurring patterns identified"
+        - "Template format retrieved"
+
+    - id: write-rca-doc
+      title: "Write the RCA Google Doc"
+      type: impl
+      description: |
+        Compile all findings into the RCA document:
+        1. Use the organization's standard RCA template
+        2. Write the executive summary
+        3. Build the complete timeline from Slack + PagerDuty data
+        4. Write the root cause analysis (proximate cause + contributing factors)
+        5. Document the impact assessment with available metrics
+        6. List mitigation steps taken
+        7. Define follow-up actions (immediate, short-term, long-term)
+        8. Write lessons learned (what went well + what could improve)
+        9. Create the Google Doc in the RCA Drive folder
+        10. Create Jira tickets for each follow-up action item
+        11. Link Jira tickets in the Google Doc
+      deps: [investigate-channel, cross-reference-pagerduty, check-prior-rcas]
+      priority: High
+      addedBy: rca-lead
+      addedAt: "2026-04-02T10:00:00Z"
+      timeoutMinutes: 120
+      evalGate:
+        evalSuiteRef:
+          name: rca-evals
+        minPassRate: 0.80
+        onFail: Reopen
+      acceptanceCriteria:
+        - "Google Doc created with all sections"
+        - "Timeline complete with timestamps and sources"
+        - "Root cause identified with evidence"
+        - "Jira tickets created for follow-ups"
+
+    - id: review-rca
+      title: "Final review of the RCA document"
+      type: review
+      description: |
+        Review the completed RCA document:
+        1. Verify timeline completeness and accuracy
+        2. Check root cause analysis is evidence-based
+        3. Ensure follow-ups are specific, assigned, and have deadlines
+        4. Validate the document follows the standard template
+        5. Confirm all Jira tickets are created and linked
+        6. Post the RCA document link to the incident Slack channel
+        7. Store key findings in team memory for future reference
+      deps: [write-rca-doc]
+      priority: High
+      addedBy: rca-lead
+      addedAt: "2026-04-02T10:00:00Z"
+      timeoutMinutes: 45
+      acceptanceCriteria:
+        - "Document reviewed and approved"
+        - "Link posted to Slack channel"
+        - "Findings stored in team memory"
+
+  dispatchPolicy:
+    maxConcurrent: 3
+    defaultTimeoutMinutes: 60
+    retryPolicy:
+      maxRetries: 2
+      backoffSeconds: 60
+      onExhaustion: EscalateToHuman
+    allowAgentMutation: true
