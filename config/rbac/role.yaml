@@ -7,6 +7,18 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - configmaps
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
   - events
   verbs:
   - create
@@ -32,6 +44,42 @@ rules:
   - list
   - watch
 - apiGroups:
+  - ""
+  resources:
+  - services
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - agentgateway.dev
+  resources:
+  - agentgatewaybackends
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - apps
+  resources:
+  - deployments
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - batch
   resources:
   - cronjobs
@@ -44,22 +92,33 @@ rules:
   - update
   - watch
 - apiGroups:
+  - cilium.io
+  resources:
+  - ciliumnetworkpolicies
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - gateway.networking.k8s.io
+  resources:
+  - httproutes
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - karo.dev
   resources:
   - agentchannels
-  - agentinstances
-  - agentloops
-  - agentmailboxes
-  - agentpolicies
-  - agentspecs
-  - agentteams
-  - dispatchers
-  - evalsuites
-  - memorystores
-  - modelconfigs
-  - sandboxclasses
-  - taskgraphs
-  - toolsets
   verbs:
   - create
   - delete
@@ -72,39 +131,371 @@ rules:
   - karo.dev
   resources:
   - agentchannels/finalizers
-  - agentinstances/finalizers
-  - agentloops/finalizers
-  - agentmailboxes/finalizers
-  - agentpolicies/finalizers
-  - agentspecs/finalizers
-  - agentteams/finalizers
-  - dispatchers/finalizers
-  - evalsuites/finalizers
-  - memorystores/finalizers
-  - modelconfigs/finalizers
-  - sandboxclasses/finalizers
-  - taskgraphs/finalizers
-  - toolsets/finalizers
   verbs:
   - update
 - apiGroups:
   - karo.dev
   resources:
   - agentchannels/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - karo.dev
+  resources:
+  - agentinstances
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - karo.dev
+  resources:
+  - agentinstances/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - karo.dev
+  resources:
   - agentinstances/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - karo.dev
+  resources:
+  - agentloops
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - karo.dev
+  resources:
+  - agentloops/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - karo.dev
+  resources:
   - agentloops/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - karo.dev
+  resources:
+  - agentmailboxes
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - karo.dev
+  resources:
+  - agentmailboxes/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - karo.dev
+  resources:
   - agentmailboxes/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - karo.dev
+  resources:
+  - agentpolicies
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - karo.dev
+  resources:
+  - agentpolicies/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - karo.dev
+  resources:
   - agentpolicies/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - karo.dev
+  resources:
+  - agentspecs
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - karo.dev
+  resources:
+  - agentspecs/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - karo.dev
+  resources:
   - agentspecs/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - karo.dev
+  resources:
+  - agentteams
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - karo.dev
+  resources:
+  - agentteams/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - karo.dev
+  resources:
   - agentteams/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - karo.dev
+  resources:
+  - dispatchers
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - karo.dev
+  resources:
+  - dispatchers/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - karo.dev
+  resources:
   - dispatchers/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - karo.dev
+  resources:
+  - evalsuites
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - karo.dev
+  resources:
+  - evalsuites/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - karo.dev
+  resources:
   - evalsuites/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - karo.dev
+  resources:
+  - memorystores
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - karo.dev
+  resources:
+  - memorystores/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - karo.dev
+  resources:
   - memorystores/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - karo.dev
+  resources:
+  - modelconfigs
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - karo.dev
+  resources:
+  - modelconfigs/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - karo.dev
+  resources:
   - modelconfigs/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - karo.dev
+  resources:
+  - sandboxclasses
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - karo.dev
+  resources:
+  - sandboxclasses/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - karo.dev
+  resources:
   - sandboxclasses/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - karo.dev
+  resources:
+  - taskgraphs
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - karo.dev
+  resources:
+  - taskgraphs/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - karo.dev
+  resources:
   - taskgraphs/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - karo.dev
+  resources:
+  - toolsets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - karo.dev
+  resources:
+  - toolsets/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - karo.dev
+  resources:
   - toolsets/status
   verbs:
   - get
   - patch
   - update
+- apiGroups:
+  - networking.k8s.io
+  resources:
+  - networkpolicies
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - node.k8s.io
+  resources:
+  - runtimeclasses
+  verbs:
+  - get
+  - list
+  - watch

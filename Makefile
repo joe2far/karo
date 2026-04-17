@@ -96,7 +96,7 @@ help: ## Display this help.
 
 .PHONY: manifests
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
-	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+	$(CONTROLLER_GEN) rbac:roleName=manager-role crd:allowDangerousTypes=true webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
@@ -160,14 +160,27 @@ HARNESS_CW_IMG  ?= $(REGISTRY)/karo-harness-claw-code:$(VERSION_TAG)
 docker-build-runtime-mcp: ## Build the agent-runtime-mcp sidecar image.
 	$(CONTAINER_TOOL) build -f Dockerfile.runtime-mcp -t $(MCP_IMG) .
 
+.PHONY: docker-push-runtime-mcp
+docker-push-runtime-mcp: ## Push the agent-runtime-mcp sidecar image.
+	$(CONTAINER_TOOL) push $(MCP_IMG)
+
 .PHONY: docker-build-harnesses
 docker-build-harnesses: ## Build all harness images.
 	$(CONTAINER_TOOL) build -t $(HARNESS_CC_IMG) harness/claude-code
 	$(CONTAINER_TOOL) build -t $(HARNESS_GS_IMG) harness/goose
 	$(CONTAINER_TOOL) build -t $(HARNESS_CW_IMG) harness/claw-code
 
+.PHONY: docker-push-harnesses
+docker-push-harnesses: ## Push all harness images.
+	$(CONTAINER_TOOL) push $(HARNESS_CC_IMG)
+	$(CONTAINER_TOOL) push $(HARNESS_GS_IMG)
+	$(CONTAINER_TOOL) push $(HARNESS_CW_IMG)
+
 .PHONY: docker-build-all
 docker-build-all: docker-build docker-build-runtime-mcp docker-build-harnesses ## Build every image in the repo.
+
+.PHONY: docker-push-all
+docker-push-all: docker-push docker-push-runtime-mcp docker-push-harnesses ## Push every image in the repo.
 
 .PHONY: helm-lint
 helm-lint: ## Lint the Helm chart.

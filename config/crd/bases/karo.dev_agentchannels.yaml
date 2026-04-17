@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.16.5
+    controller-gen.kubebuilder.io/version: v0.15.0
   name: agentchannels.karo.dev
 spec:
   group: karo.dev
@@ -49,11 +49,19 @@ spec:
                   enabled:
                     type: boolean
                   onTimeout:
+                    enum:
+                    - Fail
+                    - Escalate
+                    - Approve
                     type: string
                   style:
+                    enum:
+                    - interactive
+                    - reply
                     type: string
                   timeoutMinutes:
                     format: int32
+                    minimum: 1
                     type: integer
                 required:
                 - enabled
@@ -69,8 +77,10 @@ spec:
                           configMapRef:
                             properties:
                               key:
+                                minLength: 1
                                 type: string
                               name:
+                                minLength: 1
                                 type: string
                             required:
                             - key
@@ -79,6 +89,10 @@ spec:
                           inline:
                             type: string
                         type: object
+                        x-kubernetes-validations:
+                        - message: either inline (non-empty) or configMapRef must
+                            be set
+                          rule: (has(self.inline) && self.inline != '') || has(self.configMapRef)
                       modelConfigRef:
                         description: |-
                           LocalObjectReference contains enough information to let you locate the
@@ -91,7 +105,9 @@ spec:
                               This field is effectively required, but due to backwards compatibility is
                               allowed to be empty. Instances of this type with an empty value here are
                               almost certainly wrong.
+                              TODO: Add other useful fields. apiVersion, kind, uid?
                               More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              TODO: Drop `kubebuilder:default` when controller-gen doesn't need it https://github.com/kubernetes-sigs/kubebuilder/issues/3896.
                             type: string
                         type: object
                         x-kubernetes-map-type: atomic
@@ -111,11 +127,17 @@ spec:
                           This field is effectively required, but due to backwards compatibility is
                           allowed to be empty. Instances of this type with an empty value here are
                           almost certainly wrong.
+                          TODO: Add other useful fields. apiVersion, kind, uid?
                           More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                          TODO: Drop `kubebuilder:default` when controller-gen doesn't need it https://github.com/kubernetes-sigs/kubebuilder/issues/3896.
                         type: string
                     type: object
                     x-kubernetes-map-type: atomic
                   mode:
+                    enum:
+                    - task-creation
+                    - human-override
+                    - auto
                     type: string
                   taskGraphTemplate:
                     properties:
@@ -131,11 +153,20 @@ spec:
                               This field is effectively required, but due to backwards compatibility is
                               allowed to be empty. Instances of this type with an empty value here are
                               almost certainly wrong.
+                              TODO: Add other useful fields. apiVersion, kind, uid?
                               More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              TODO: Drop `kubebuilder:default` when controller-gen doesn't need it https://github.com/kubernetes-sigs/kubebuilder/issues/3896.
                             type: string
                         type: object
                         x-kubernetes-map-type: atomic
                       initialTaskType:
+                        enum:
+                        - design
+                        - impl
+                        - eval
+                        - review
+                        - infra
+                        - approval
                         type: string
                       ownerAgentRef:
                         description: |-
@@ -149,7 +180,9 @@ spec:
                               This field is effectively required, but due to backwards compatibility is
                               allowed to be empty. Instances of this type with an empty value here are
                               almost certainly wrong.
+                              TODO: Add other useful fields. apiVersion, kind, uid?
                               More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              TODO: Drop `kubebuilder:default` when controller-gen doesn't need it https://github.com/kubernetes-sigs/kubebuilder/issues/3896.
                             type: string
                         type: object
                         x-kubernetes-map-type: atomic
@@ -165,6 +198,10 @@ spec:
               outbound:
                 properties:
                   format:
+                    enum:
+                    - summary
+                    - detailed
+                    - minimal
                     type: string
                   notifyOn:
                     items:
@@ -182,7 +219,9 @@ spec:
                           This field is effectively required, but due to backwards compatibility is
                           allowed to be empty. Instances of this type with an empty value here are
                           almost certainly wrong.
+                          TODO: Add other useful fields. apiVersion, kind, uid?
                           More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                          TODO: Drop `kubebuilder:default` when controller-gen doesn't need it https://github.com/kubernetes-sigs/kubebuilder/issues/3896.
                         type: string
                     type: object
                     x-kubernetes-map-type: atomic
@@ -212,7 +251,9 @@ spec:
                               This field is effectively required, but due to backwards compatibility is
                               allowed to be empty. Instances of this type with an empty value here are
                               almost certainly wrong.
+                              TODO: Add other useful fields. apiVersion, kind, uid?
                               More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              TODO: Drop `kubebuilder:default` when controller-gen doesn't need it https://github.com/kubernetes-sigs/kubebuilder/issues/3896.
                             type: string
                           optional:
                             description: Specify whether the Secret or its key must
@@ -223,8 +264,10 @@ spec:
                         type: object
                         x-kubernetes-map-type: atomic
                       channelId:
+                        minLength: 1
                         type: string
                       guildId:
+                        minLength: 1
                         type: string
                       messageContentIntent:
                         type: boolean
@@ -255,7 +298,9 @@ spec:
                               This field is effectively required, but due to backwards compatibility is
                               allowed to be empty. Instances of this type with an empty value here are
                               almost certainly wrong.
+                              TODO: Add other useful fields. apiVersion, kind, uid?
                               More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              TODO: Drop `kubebuilder:default` when controller-gen doesn't need it https://github.com/kubernetes-sigs/kubebuilder/issues/3896.
                             type: string
                           optional:
                             description: Specify whether the Secret or its key must
@@ -279,7 +324,9 @@ spec:
                               This field is effectively required, but due to backwards compatibility is
                               allowed to be empty. Instances of this type with an empty value here are
                               almost certainly wrong.
+                              TODO: Add other useful fields. apiVersion, kind, uid?
                               More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              TODO: Drop `kubebuilder:default` when controller-gen doesn't need it https://github.com/kubernetes-sigs/kubebuilder/issues/3896.
                             type: string
                           optional:
                             description: Specify whether the Secret or its key must
@@ -290,6 +337,7 @@ spec:
                         type: object
                         x-kubernetes-map-type: atomic
                       channelId:
+                        minLength: 1
                         type: string
                       signingSecret:
                         description: SecretKeySelector selects a key of a Secret.
@@ -305,7 +353,9 @@ spec:
                               This field is effectively required, but due to backwards compatibility is
                               allowed to be empty. Instances of this type with an empty value here are
                               almost certainly wrong.
+                              TODO: Add other useful fields. apiVersion, kind, uid?
                               More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              TODO: Drop `kubebuilder:default` when controller-gen doesn't need it https://github.com/kubernetes-sigs/kubebuilder/issues/3896.
                             type: string
                           optional:
                             description: Specify whether the Secret or its key must
@@ -344,7 +394,9 @@ spec:
                               This field is effectively required, but due to backwards compatibility is
                               allowed to be empty. Instances of this type with an empty value here are
                               almost certainly wrong.
+                              TODO: Add other useful fields. apiVersion, kind, uid?
                               More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              TODO: Drop `kubebuilder:default` when controller-gen doesn't need it https://github.com/kubernetes-sigs/kubebuilder/issues/3896.
                             type: string
                           optional:
                             description: Specify whether the Secret or its key must
@@ -359,6 +411,7 @@ spec:
                       teamId:
                         type: string
                       tenantId:
+                        minLength: 1
                         type: string
                     required:
                     - appCredentialSecret
@@ -384,7 +437,9 @@ spec:
                               This field is effectively required, but due to backwards compatibility is
                               allowed to be empty. Instances of this type with an empty value here are
                               almost certainly wrong.
+                              TODO: Add other useful fields. apiVersion, kind, uid?
                               More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              TODO: Drop `kubebuilder:default` when controller-gen doesn't need it https://github.com/kubernetes-sigs/kubebuilder/issues/3896.
                             type: string
                           optional:
                             description: Specify whether the Secret or its key must
@@ -397,6 +452,9 @@ spec:
                       chatId:
                         type: string
                       dmPolicy:
+                        enum:
+                        - allow
+                        - deny
                         type: string
                       inlineKeyboard:
                         type: boolean
@@ -404,6 +462,12 @@ spec:
                     - botTokenSecret
                     type: object
                   type:
+                    enum:
+                    - slack
+                    - telegram
+                    - discord
+                    - teams
+                    - webhook
                     type: string
                   webhook:
                     properties:
@@ -421,7 +485,9 @@ spec:
                               This field is effectively required, but due to backwards compatibility is
                               allowed to be empty. Instances of this type with an empty value here are
                               almost certainly wrong.
+                              TODO: Add other useful fields. apiVersion, kind, uid?
                               More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              TODO: Drop `kubebuilder:default` when controller-gen doesn't need it https://github.com/kubernetes-sigs/kubebuilder/issues/3896.
                             type: string
                           optional:
                             description: Specify whether the Secret or its key must
@@ -432,8 +498,10 @@ spec:
                         type: object
                         x-kubernetes-map-type: atomic
                       inboundUrl:
+                        minLength: 1
                         type: string
                       outboundUrl:
+                        minLength: 1
                         type: string
                     required:
                     - inboundUrl
@@ -457,7 +525,9 @@ spec:
                             This field is effectively required, but due to backwards compatibility is
                             allowed to be empty. Instances of this type with an empty value here are
                             almost certainly wrong.
+                            TODO: Add other useful fields. apiVersion, kind, uid?
                             More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                            TODO: Drop `kubebuilder:default` when controller-gen doesn't need it https://github.com/kubernetes-sigs/kubebuilder/issues/3896.
                           type: string
                       type: object
                       x-kubernetes-map-type: atomic
@@ -475,11 +545,20 @@ spec:
                                 This field is effectively required, but due to backwards compatibility is
                                 allowed to be empty. Instances of this type with an empty value here are
                                 almost certainly wrong.
+                                TODO: Add other useful fields. apiVersion, kind, uid?
                                 More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                TODO: Drop `kubebuilder:default` when controller-gen doesn't need it https://github.com/kubernetes-sigs/kubebuilder/issues/3896.
                               type: string
                           type: object
                           x-kubernetes-map-type: atomic
                         initialTaskType:
+                          enum:
+                          - design
+                          - impl
+                          - eval
+                          - review
+                          - infra
+                          - approval
                           type: string
                         ownerAgentRef:
                           description: |-
@@ -493,7 +572,9 @@ spec:
                                 This field is effectively required, but due to backwards compatibility is
                                 allowed to be empty. Instances of this type with an empty value here are
                                 almost certainly wrong.
+                                TODO: Add other useful fields. apiVersion, kind, uid?
                                 More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                TODO: Drop `kubebuilder:default` when controller-gen doesn't need it https://github.com/kubernetes-sigs/kubebuilder/issues/3896.
                               type: string
                           type: object
                           x-kubernetes-map-type: atomic
@@ -518,11 +599,14 @@ spec:
                             This field is effectively required, but due to backwards compatibility is
                             allowed to be empty. Instances of this type with an empty value here are
                             almost certainly wrong.
+                            TODO: Add other useful fields. apiVersion, kind, uid?
                             More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                            TODO: Drop `kubebuilder:default` when controller-gen doesn't need it https://github.com/kubernetes-sigs/kubebuilder/issues/3896.
                           type: string
                       type: object
                       x-kubernetes-map-type: atomic
                     trigger:
+                      minLength: 1
                       type: string
                   required:
                   - fromTeamRef
@@ -536,6 +620,17 @@ spec:
             - outbound
             - platform
             type: object
+            x-kubernetes-validations:
+            - message: slack config required when platform type is slack
+              rule: self.platform.type != 'slack' || has(self.platform.slack)
+            - message: telegram config required when platform type is telegram
+              rule: self.platform.type != 'telegram' || has(self.platform.telegram)
+            - message: discord config required when platform type is discord
+              rule: self.platform.type != 'discord' || has(self.platform.discord)
+            - message: teams config required when platform type is teams
+              rule: self.platform.type != 'teams' || has(self.platform.teams)
+            - message: webhook config required when platform type is webhook
+              rule: self.platform.type != 'webhook' || has(self.platform.webhook)
           status:
             properties:
               activeTaskGraphs:
@@ -555,8 +650,16 @@ spec:
                 type: array
               conditions:
                 items:
-                  description: Condition contains details for one aspect of the current
-                    state of this API Resource.
+                  description: "Condition contains details for one aspect of the current
+                    state of this API Resource.\n---\nThis struct is intended for
+                    direct use as an array at the field path .status.conditions.  For
+                    example,\n\n\n\ttype FooStatus struct{\n\t    // Represents the
+                    observations of a foo's current state.\n\t    // Known .status.conditions.type
+                    are: \"Available\", \"Progressing\", and \"Degraded\"\n\t    //
+                    +patchMergeKey=type\n\t    // +patchStrategy=merge\n\t    // +listType=map\n\t
+                    \   // +listMapKey=type\n\t    Conditions []metav1.Condition `json:\"conditions,omitempty\"
+                    patchStrategy:\"merge\" patchMergeKey:\"type\" protobuf:\"bytes,1,rep,name=conditions\"`\n\n\n\t
+                    \   // other fields\n\t}"
                   properties:
                     lastTransitionTime:
                       description: |-
@@ -597,7 +700,12 @@ spec:
                       - Unknown
                       type: string
                     type:
-                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      description: |-
+                        type of condition in CamelCase or in foo.example.com/CamelCase.
+                        ---
+                        Many .condition.type values are consistent across resources like Available, but because arbitrary conditions can be
+                        useful (see .node.status.conditions), the ability to deconflict is important.
+                        The regex it matches is (dns1123SubdomainFmt/)?(qualifiedNameFmt)
                       maxLength: 316
                       pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
                       type: string
