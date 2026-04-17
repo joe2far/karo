@@ -1,0 +1,129 @@
+# Agent Gateway integration — delegation model (Option 2).
+#
+# KARO does NOT deploy the gateway itself. You run agentgateway.dev as a
+# Kubernetes Gateway API implementation. KARO translates ModelConfig / ToolSet
+# resources into the native agentgateway.dev resources that drive it:
+#
+#     ModelConfig(gatewayRef) ───► AgentgatewayBackend(agentgateway.dev/v1alpha1)
+#                               └► HTTPRoute(gateway.networking.k8s.io/v1)
+#                                  attached to the user-owned Gateway
+#
+# See docs/karo-spec-v0.4.0-alpha.md §15 for the full contract.
+
+---
+# 1. (Pre-requisite, user-owned) — the native Gateway API resources that run
+# agentgateway.dev. KARO does not create these; they live in the cluster as
+# shared infrastructure. Shown here for reference.
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: agentgateway
+spec:
+  controllerName: agentgateway.dev/gateway-controller
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: alpha-agent-gateway
+  namespace: team-alpha
+spec:
+  gatewayClassName: agentgateway
+  listeners:
+    - name: llm
+      protocol: HTTP
+      port: 80
+      allowedRoutes:
+        namespaces:
+          from: Same
+
+---
+# 2. KARO ModelConfig with gatewayRef. The ModelConfig controller will
+# render an AgentgatewayBackend (anthropic provider) + HTTPRoute at
+# /v1/models/claude-via-gateway pointing at this Gateway.
+apiVersion: karo.dev/v1alpha1
+kind: ModelConfig
+metadata:
+  name: claude-via-gateway
+  namespace: team-alpha
+spec:
+  provider: anthropic
+  name: claude-sonnet-4-20250514
+  apiKeySecret:
+    name: anthropic-credentials
+    key: ANTHROPIC_API_KEY
+  # Route LLM traffic through the gateway. status.resolvedEndpoint will be
+  # populated with http://alpha-agent-gateway.team-alpha.svc/v1/models/claude-via-gateway
+  # and agents dial that OpenAI-compatible URL.
+  gatewayRef:
+    name: alpha-agent-gateway
+
+---
+# 3. Bedrock on EKS — the gateway Pod's ServiceAccount must carry the IRSA
+# annotation. KARO cannot mutate the gateway SA (user-owned); the ModelConfig
+# controller surfaces the required annotation via a status condition message
+# so the platform team can apply it out-of-band.
+apiVersion: karo.dev/v1alpha1
+kind: ModelConfig
+metadata:
+  name: claude-bedrock-via-gateway
+  namespace: team-alpha
+spec:
+  provider: bedrock
+  name: anthropic.claude-3-5-sonnet-20240620-v1:0
+  bedrock:
+    region: us-east-1
+    # The gateway's SA must be annotated:
+    #   eks.amazonaws.com/role-arn: arn:aws:iam::123:role/karo-bedrock
+    irsaRoleArn: arn:aws:iam::123456789012:role/karo-bedrock
+  gatewayRef:
+    name: alpha-agent-gateway
+
+---
+# 4. Vertex AI on GKE — Workload Identity binding on the gateway SA, same
+# pattern as Bedrock. Required annotation is published in the ModelConfig's
+# GatewayWired condition.
+apiVersion: karo.dev/v1alpha1
+kind: ModelConfig
+metadata:
+  name: gemini-vertex-via-gateway
+  namespace: team-alpha
+spec:
+  provider: vertex
+  name: gemini-1.5-pro
+  vertex:
+    project: my-gcp-project
+    location: us-central1
+    # Gateway SA must be annotated:
+    #   iam.gke.io/gcp-service-account: karo-vertex@my-gcp-project.iam.gserviceaccount.com
+    gcpServiceAccount: karo-vertex@my-gcp-project.iam.gserviceaccount.com
+  gatewayRef:
+    name: alpha-agent-gateway
+
+---
+# 5. ToolSet with gatewayRef — each non-stdio tool becomes an
+# AgentgatewayBackend of MCP type. A single HTTPRoute with one rule per tool
+# is attached to the Gateway at /v1/mcp/<toolset>/<tool>.
+apiVersion: karo.dev/v1alpha1
+kind: ToolSet
+metadata:
+  name: alpha-permitted-tools
+  namespace: team-alpha
+spec:
+  gatewayRef:
+    name: alpha-agent-gateway
+  tools:
+    - name: github
+      type: mcp
+      transport: streamable-http
+      endpoint: "http://github-mcp-server:8080"
+      permissions: [read, write]
+      credentialSecret:
+        name: github-mcp-credentials
+        key: GITHUB_TOKEN
+    - name: web-search
+      type: mcp
+      transport: sse
+      endpoint: "http://web-search-mcp:8080"
+      permissions: [search]
+    # stdio transport cannot be proxied by an HTTP gateway — the ToolSet
+    # controller skips it and emits a Degraded condition identifying the tool.

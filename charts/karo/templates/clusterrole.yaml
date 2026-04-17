@@ -31,6 +31,19 @@ rules:
     resources: ["runtimeclasses"]
     verbs: ["get", "list", "watch"]
 
+  # Agent Gateway integration — the operator translates KARO ModelConfig
+  # and ToolSet resources into native agentgateway.dev backends and
+  # Gateway API HTTPRoutes that attach to the user's Gateway.
+  - apiGroups: ["agentgateway.dev"]
+    resources: ["agentgatewaybackends"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources: ["httproutes"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources: ["gateways"]
+    verbs: ["get", "list", "watch"]
+
   # Leader election
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]

@@ -16,10 +16,12 @@ type AgentSpecSpec struct {
 	MemoryRef            *corev1.LocalObjectReference `json:"memoryRef,omitempty"`
 	ToolSetRef           *corev1.LocalObjectReference `json:"toolSetRef,omitempty"`
 	SandboxClassRef      *corev1.LocalObjectReference `json:"sandboxClassRef,omitempty"`
-	// GatewayRef is a namespace-default AgentGateway used for both LLM
-	// and MCP traffic when the referenced ModelConfig/ToolSet do not
-	// pin a gateway of their own. An explicit gatewayRef on a
-	// ModelConfig or ToolSet takes precedence over this default.
+	// GatewayRef points at a native Gateway API resource
+	// (gateway.networking.k8s.io/v1 Gateway) running the agentgateway.dev
+	// data plane. Used as a namespace default for both LLM and MCP
+	// traffic when the referenced ModelConfig/ToolSet do not pin a
+	// gateway of their own. An explicit gatewayRef on a ModelConfig or
+	// ToolSet takes precedence over this default.
 	GatewayRef           *corev1.LocalObjectReference `json:"gatewayRef,omitempty"`
 	WorkspaceCredentials *WorkspaceCredentialsConfig  `json:"workspaceCredentials,omitempty"`
 	Runtime              RuntimeConfig                `json:"runtime"`

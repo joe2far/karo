@@ -15,6 +15,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	karov1alpha1 "github.com/joe2far/karo/api/v1alpha1"
+	"github.com/joe2far/karo/internal/gateway"
 )
 
 const toolSetFinalizer = "karo.dev/toolset-finalizer"
@@ -25,11 +26,14 @@ const toolSetFinalizer = "karo.dev/toolset-finalizer"
 // +kubebuilder:rbac:groups=karo.dev,resources=agentpolicies,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
+// +kubebuilder:rbac:groups=agentgateway.dev,resources=agentgatewaybackends,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=gateway.networking.k8s.io,resources=httproutes,verbs=get;list;watch;create;update;patch;delete
 
 type ToolSetReconciler struct {
 	client.Client
-	Scheme   *runtime.Scheme
-	Recorder record.EventRecorder
+	Scheme            *runtime.Scheme
+	Recorder          record.EventRecorder
+	GatewayTranslator *gateway.Translator
 }
 
 func (r *ToolSetReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -148,6 +152,11 @@ func (r *ToolSetReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		})
 	}
 
+	// Gateway delegation — if spec.gatewayRef is set, translate tools into
+	// native agentgateway.dev resources so agents reach MCP tools through
+	// the gateway's proxy plane rather than dialing each endpoint directly.
+	r.reconcileGateway(ctx, &toolSet)
+
 	if err := r.Status().Update(ctx, &toolSet); err != nil {
 		logger.Error(err, "unable to update ToolSet status")
 		return ctrl.Result{}, err
@@ -155,6 +164,48 @@ func (r *ToolSetReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	r.Recorder.Event(&toolSet, "Normal", "Reconciled", fmt.Sprintf("ToolSet reconciled with %d/%d tools available", reachableCount, toolCount))
 	return ctrl.Result{}, nil
+}
+
+// reconcileGateway handles optional agentgateway.dev delegation for MCP
+// tools. On success, ToolSet.status gets a `GatewayWired` condition and the
+// gateway-facing endpoint is reflected in the status message.
+func (r *ToolSetReconciler) reconcileGateway(ctx context.Context, ts *karov1alpha1.ToolSet) {
+	logger := log.FromContext(ctx)
+
+	if r.GatewayTranslator == nil {
+		return
+	}
+
+	if ts.Spec.GatewayRef == nil {
+		if err := r.GatewayTranslator.CleanupToolSetResources(ctx, ts); err != nil {
+			logger.Error(err, "failed to clean up gateway resources")
+		}
+		removeCondition(&ts.Status.Conditions, "GatewayWired")
+		return
+	}
+
+	endpoint, err := r.GatewayTranslator.EnsureToolSetResources(ctx, ts)
+	if err != nil {
+		ts.Status.Phase = "Degraded"
+		setCondition(&ts.Status.Conditions, metav1.Condition{
+			Type:               "GatewayWired",
+			Status:             metav1.ConditionFalse,
+			ObservedGeneration: ts.Generation,
+			LastTransitionTime: metav1.Now(),
+			Reason:             "TranslationFailed",
+			Message:            fmt.Sprintf("failed to render gateway resources: %v", err),
+		})
+		r.Recorder.Event(ts, corev1.EventTypeWarning, "GatewayTranslationFailed", err.Error())
+		return
+	}
+	setCondition(&ts.Status.Conditions, metav1.Condition{
+		Type:               "GatewayWired",
+		Status:             metav1.ConditionTrue,
+		ObservedGeneration: ts.Generation,
+		LastTransitionTime: metav1.Now(),
+		Reason:             "ResourcesApplied",
+		Message:            fmt.Sprintf("AgentgatewayBackends and HTTPRoute applied; endpoint=%s", endpoint),
+	})
 }
 
 func (r *ToolSetReconciler) SetupWithManager(mgr ctrl.Manager) error {

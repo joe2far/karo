@@ -26,7 +26,7 @@
 
 **KARO** (Kubernetes Agent Runtime Orchestrator) is a Kubernetes-native operator that provides first-class primitives for deploying, orchestrating, and governing AI agents at scale. KARO treats agents as schedulable, observable, and governable Kubernetes workloads — not as scripts or ephemeral processes.
 
-KARO introduces fifteen Custom Resource Definitions (CRDs) that model every layer of an agent system: model configuration, identity, team grouping, memory, tooling, sandboxing, scheduling, task orchestration, dispatch, messaging, evaluation, policy, human communication channels, and request-level gateways. Together they form a complete declarative API surface for multi-agent systems on Kubernetes.
+KARO introduces fourteen Custom Resource Definitions (CRDs) that model every layer of an agent system: model configuration, identity, team grouping, memory, tooling, sandboxing, scheduling, task orchestration, dispatch, messaging, evaluation, policy, and human communication channels. Together they form a complete declarative API surface for multi-agent systems on Kubernetes. Request-level gateway concerns (rate limits, budgets, provider failover, unified observability) are delegated to [agentgateway.dev](https://github.com/agentgateway/agentgateway) — KARO translates `ModelConfig` / `ToolSet` resources into native `AgentgatewayBackend` + Gateway API `HTTPRoute` objects rather than modelling the gateway with its own CRD. See Section 15 for the integration contract.
 
 **API Group:** `karo.dev`
 **Initial Version:** `v1alpha1`
@@ -86,7 +86,7 @@ The Gastown concept of a **Convoy** (a named collection of tasks forming a unit 
 #### agentic-layer/agent-runtime-operator
 Provides `Agent`, `AgentGateway`, and `AgentGatewayClass` CRDs focused on MCP gateway routing and observability wiring.
 
-**Gap:** No memory, loop, task graph, sandbox, or dispatch primitives. KARO's `AgentGateway` CRD (Section 15) adopts the same proxy pattern and composes it with the rest of the KARO control plane — a ModelConfig, ToolSet, or AgentSpec can reference an `AgentGateway` directly via `gatewayRef`.
+**Gap:** No memory, loop, task graph, sandbox, or dispatch primitives. KARO covers those layers and — rather than defining its own gateway CRDs — delegates request-level proxying to [agentgateway.dev](https://github.com/agentgateway/agentgateway) via Gateway API. KARO translates `ModelConfig` / `ToolSet` resources into native `AgentgatewayBackend` + `HTTPRoute` objects attached to the user's Gateway (Section 15).
 
 ### KARO's Differentiation
 
@@ -105,7 +105,7 @@ Provides `Agent`, `AgentGateway`, and `AgentGatewayClass` CRDs focused on MCP ga
 | Dispatcher / routing | ❌ | ✅ partial | ✅ partial | ✅ Mayor | ✅ typed |
 | AgentMailbox | ❌ | ❌ | ❌ | ✅ hooks | ✅ |
 | Policy / governance | ❌ | ❌ | partial | ❌ | ✅ |
-| Request-level gateway (LLM/MCP/A2A) | ❌ | ❌ | partial | ❌ | ✅ |
+| Request-level gateway (LLM/MCP/A2A) | ❌ | ❌ | partial | ❌ | ✅ (agentgateway.dev, delegated) |
 | Multi-tenant / RBAC | ✅ | ❌ | ❌ | ❌ | ✅ |
 
 ---
@@ -134,8 +134,9 @@ Provides `Agent`, `AgentGateway`, and `AgentGatewayClass` CRDs focused on MCP ga
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  Layer 9: Request-Level Gateway                         │
-│  AgentGateway (LLM / MCP / A2A proxy)                   │
+│  Layer 9: Request-Level Gateway (delegated)             │
+│  agentgateway.dev + Gateway API                         │
+│  (translated from ModelConfig / ToolSet gatewayRef)     │
 ├─────────────────────────────────────────────────────────┤
 │  Layer 8: Human Communication                           │
 │  AgentChannel                                           │
@@ -2878,99 +2879,34 @@ sequenceDiagram
 
 ---
 
-### 15. AgentGateway
+### 15. Agent Gateway Integration (delegation, not a KARO CRD)
 
-**Purpose:** Declares a request-level proxy for agent traffic — agent→LLM, agent→tool (MCP), and agent→agent (A2A). The gateway enforces rate limits, budgets, and auth per request, provides unified observability (metrics + tracing) across heterogeneous upstreams, and fails over between providers when one is unhealthy or over budget.
+**Purpose:** Route agent traffic — agent→LLM, agent→tool (MCP), and agent→agent (A2A) — through the [agentgateway.dev](https://github.com/agentgateway/agentgateway) data plane, so rate limits, budgets, auth, provider failover, and unified observability are enforced at request time rather than in each agent pod.
 
-**Design rationale:** Without a gateway, every agent speaks directly to every model provider and MCP server. That makes it impossible to enforce a single rate limit across a team, to attribute cost back to an AgentInstance, or to fail over from one provider to another without redeploying agents. The AgentGateway CRD promotes the proxy from "infrastructure you bolt on" to a KARO-managed primitive that ModelConfig, ToolSet, and AgentSpec can reference directly.
+**Design decision: delegation, not re-implementation.**
 
-**Inspiration:** [agentgateway.dev](https://github.com/agentgateway/agentgateway) (the default container image) and the `agentic-layer/agent-runtime-operator` `AgentGateway`/`AgentGatewayClass` CRDs, which first modeled an MCP gateway as a Kubernetes resource. KARO composes the pattern with the rest of the control plane so a single `gatewayRef` handles all three traffic classes.
+KARO does **not** model the gateway with its own CRD. The agentgateway project already defines:
 
-**v0.4.0:** New CRD (15th). CRD count: 14 → 15.
+- `AgentgatewayBackend` (`agentgateway.dev/v1alpha1`) — one per upstream (anthropic, openai, bedrock, vertexai, gemini, azureopenai, MCP target, A2A target).
+- Standard Kubernetes **Gateway API** resources — `GatewayClass`, `Gateway`, `HTTPRoute` — for listener configuration and routing.
 
-```yaml
-apiVersion: karo.dev/v1alpha1
-kind: AgentGateway
-metadata:
-  name: alpha-agent-gateway
-  namespace: team-alpha
-spec:
-  # Defaults to the bundled agentgateway.dev build.
-  image: ghcr.io/agentgateway/agentgateway:latest
-  replicas: 2
-  listenPort: 8080
+Inventing a parallel KARO CRD on top would duplicate that schema and couple KARO to a specific agentgateway version. Instead, KARO's role is to **translate** its existing declarative CRDs (`ModelConfig`, `ToolSet`) into the native agentgateway resources the user's Gateway consumes.
 
-  upstreams:
-    # LLM upstreams — resolved against ModelConfig in the same namespace.
-    models:
-      - name: primary
-        modelConfigRef:
-          name: claude-sonnet-direct
-        weight: 80
-        fallbackOrder: [gemma4-vertex]  # on error or budget exceed
-      - name: fallback
-        modelConfigRef:
-          name: gemma4-vertex
-        weight: 20
+```
+KARO ModelConfig (gatewayRef) ──► AgentgatewayBackend (anthropic/openai/bedrock/vertexai)
+                              └─► HTTPRoute attached to the user-owned Gateway
 
-    # MCP tool upstreams — the gateway multiplexes tool calls and enforces
-    # per-tool permissions and rate limits.
-    tools:
-      - name: engineering-tools
-        toolSetRef:
-          name: alpha-permitted-tools
-        allowedTools: [github, web-search]  # empty = all tools from the set
-
-    # Peer-agent upstreams (A2A). v1alpha1 plumbs configuration only; active
-    # routing is gated on the A2A roadmap item.
-    agents: []
-
-  # Enforced inside the gateway process, not the operator.
-  policy:
-    rateLimit:
-      requestsPerMinute: 600
-      tokensPerMinute: 2000000
-      perAgent: true
-    budget:
-      dailyUsd: 250.0
-      monthlyUsd: 6000.0
-      onExceed: fallback              # block | warn | fallback
-    auth:
-      mode: bearer                    # mtls | bearer | none
-      bearerSecret:
-        name: karo-agentgateway-auth
-        key: token
-    failoverEnabled: true
-
-  observability:
-    metricsEnabled: true
-    metricsPort: 9090
-    tracingEnabled: true
-    tracingEndpoint: https://tempo.observability.svc:4318
-
-  resources:
-    requests: {cpu: "200m", memory: "256Mi"}
-    limits:   {cpu: "1",    memory: "1Gi"}
-
-status:
-  phase: Ready                         # Pending | Ready | Degraded | Error
-  resolvedEndpoint: http://karo-agw-alpha-agent-gateway.team-alpha.svc:8080
-  readyReplicas: 2
-  resolvedUpstreams: 3
-  lastReconciledAt: "2026-04-17T18:30:00Z"
-  conditions:
-    - type: UpstreamsResolved
-      status: "True"
-      reason: AllUpstreamsResolved
-    - type: Ready
-      status: "True"
-      reason: GatewayRunning
+KARO ToolSet (gatewayRef)     ──► AgentgatewayBackend (MCP, one per tool)
+                              └─► HTTPRoute with one rule per tool
 ```
 
-**How agents use the gateway — three ways to wire it:**
+The user owns the `GatewayClass` + `Gateway` (shared cluster infrastructure). KARO owns the generated `AgentgatewayBackend` + `HTTPRoute` (they carry `ownerReferences` back to the ModelConfig / ToolSet for garbage collection).
+
+**How agents use it — three ways to wire it:**
 
 ```yaml
-# 1. Per-ModelConfig (LLM only)
+# 1. Per-ModelConfig (LLM only). Controller renders an AgentgatewayBackend
+#    with provider: anthropic and an HTTPRoute at /v1/models/claude-via-gateway.
 apiVersion: karo.dev/v1alpha1
 kind: ModelConfig
 metadata: {name: claude-via-gateway, namespace: team-alpha}
@@ -2978,72 +2914,146 @@ spec:
   provider: anthropic
   name: claude-sonnet-4-20250514
   apiKeySecret: {name: anthropic-credentials, key: ANTHROPIC_API_KEY}
-  gatewayRef: {name: alpha-agent-gateway}     # NEW — route LLM calls via gateway
+  gatewayRef: {name: alpha-agent-gateway}
 
-# 2. Per-ToolSet (MCP only)
+# 2. Per-ToolSet (MCP only). Controller renders one AgentgatewayBackend per
+#    tool of type mcp + an HTTPRoute with a rule per tool.
 apiVersion: karo.dev/v1alpha1
 kind: ToolSet
 metadata: {name: alpha-permitted-tools, namespace: team-alpha}
 spec:
+  gatewayRef: {name: alpha-agent-gateway}
   tools: [...]
-  gatewayRef: {name: alpha-agent-gateway}     # NEW — route MCP calls via gateway
 
 # 3. Per-AgentSpec (namespace default for both)
 apiVersion: karo.dev/v1alpha1
 kind: AgentSpec
 metadata: {name: coder-agent, namespace: team-alpha}
 spec:
-  modelConfigRef: {name: claude-sonnet-direct}
+  modelConfigRef: {name: claude-via-gateway}
   toolSetRef:     {name: alpha-permitted-tools}
-  gatewayRef:     {name: alpha-agent-gateway} # NEW — default for LLM + MCP
-  # ...
+  gatewayRef:     {name: alpha-agent-gateway}   # default, used when MC/TS don't pin
 ```
 
 **Precedence:** An explicit `gatewayRef` on a `ModelConfig` or `ToolSet` always wins over the `AgentSpec` namespace default. This lets operators opt individual models/tools in or out of the gateway without rewriting AgentSpecs.
 
-**Go type definitions:** see `api/v1alpha1/agentgateway_types.go`. Key types: `AgentGatewaySpec`, `GatewayUpstreams`, `GatewayModelUpstream`, `GatewayToolUpstream`, `GatewayAgentUpstream`, `GatewayPolicy`, `GatewayRateLimit`, `GatewayBudget`, `GatewayAuth`, `GatewayObservability`, `AgentGatewayStatus`.
+**What the user provisions (once per cluster or team):**
 
-**Controller responsibilities:**
-- On create/update, walk `spec.upstreams.models[]` and `spec.upstreams.tools[]`, and verify each `ModelConfigRef` / `ToolSetRef` resolves to an existing CRD in the same namespace. Missing refs push phase to `Degraded`.
-- Materialize a `Deployment` running the gateway image, configured via environment variables (`KARO_GATEWAY_UPSTREAM_MODELS`, `KARO_GATEWAY_UPSTREAM_TOOLS`, `KARO_GATEWAY_PORT`, `KARO_GATEWAY_METRICS_PORT`, `KARO_GATEWAY_BEARER_TOKEN` from `spec.policy.auth.bearerSecret`).
-- Materialize a `Service` exposing the proxy port and metrics port; both Deployment and Service are owned by the AgentGateway CR and garbage-collected on delete.
-- Track `status.resolvedEndpoint`, `status.readyReplicas`, and `status.resolvedUpstreams`; emit `UpstreamsResolved` and `Ready` conditions.
-- Failover, rate limiting, and budget enforcement run inside the gateway process itself — the controller's job is to wire configuration, not to proxy requests.
+```yaml
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata: {name: agentgateway}
+spec:
+  controllerName: agentgateway.dev/gateway-controller
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata: {name: alpha-agent-gateway, namespace: team-alpha}
+spec:
+  gatewayClassName: agentgateway
+  listeners:
+    - {name: llm, protocol: HTTP, port: 80, allowedRoutes: {namespaces: {from: Same}}}
+```
 
-**Metrics (exposed by the gateway, scraped by VictoriaMetrics):**
-- `karo_agent_gateway_requests_total{gateway, upstream, outcome}` — request count by upstream and outcome (success, fallback, blocked, error)
-- `karo_agent_gateway_request_duration_seconds{gateway, upstream}` — request latency histogram
-- `karo_agent_gateway_tokens_total{gateway, upstream, direction}` — token usage
-- `karo_agent_gateway_cost_usd_total{gateway, upstream}` — accumulated cost for budget enforcement
-- `karo_agent_gateway_budget_exceeded_total{gateway, policy}` — counter of budget-exceed events
+KARO never creates these. Policy (rate limits, budgets, auth, failover) and observability (metrics, tracing) are configured on the `Gateway` / `AgentgatewayBackend` via agentgateway's native policy fields — see [agentgateway.dev docs](https://agentgateway.dev/docs/kubernetes/latest/).
 
-These slot into the existing observability section — no new dashboards are required, only additional panels on the "channel & cost" row.
+**Generated resources (what KARO renders):**
 
-**End-to-end flow: AgentInstance → AgentGateway → Model Provider:**
+Given the ModelConfig above, the ModelConfig controller materializes:
+
+```yaml
+# karo-mc-claude-via-gateway (owned by ModelConfig/claude-via-gateway)
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: karo-mc-claude-via-gateway
+  namespace: team-alpha
+  labels:
+    app.kubernetes.io/managed-by: karo-operator
+    karo.dev/owner-kind: modelconfig
+    karo.dev/owner-name: claude-via-gateway
+spec:
+  ai:
+    provider:
+      anthropic:
+        model: claude-sonnet-4-20250514
+  policies:
+    auth:
+      secretRef: {name: anthropic-credentials}
+---
+# karo-mc-claude-via-gateway (HTTPRoute)
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata: {name: karo-mc-claude-via-gateway, namespace: team-alpha}
+spec:
+  parentRefs:
+    - {group: gateway.networking.k8s.io, kind: Gateway, name: alpha-agent-gateway, namespace: team-alpha}
+  rules:
+    - matches: [{path: {type: PathPrefix, value: /v1/models/claude-via-gateway}}]
+      backendRefs: [{group: agentgateway.dev, kind: AgentgatewayBackend, name: karo-mc-claude-via-gateway}]
+```
+
+ModelConfig status then publishes the OpenAI-compatible endpoint for agents to dial:
+
+```yaml
+status:
+  resolvedEndpoint: http://alpha-agent-gateway.team-alpha.svc/v1/models/claude-via-gateway
+  conditions:
+    - type: GatewayWired
+      status: "True"
+      reason: ResourcesApplied
+```
+
+**Provider-specific translation:**
+
+| Provider  | AgentgatewayBackend `spec.ai.provider.*` | Credential wiring |
+|-----------|-------------------------------------------|--------------------|
+| anthropic | `anthropic.model`                         | `policies.auth.secretRef` → ModelConfig `apiKeySecret` |
+| openai    | `openai.model`, `openai.baseUrl`          | `policies.auth.secretRef` → ModelConfig `apiKeySecret` |
+| bedrock   | `bedrock.model`, `bedrock.region`         | Gateway Pod SA must carry `eks.amazonaws.com/role-arn` (IRSA) |
+| vertex    | `vertexai.model`, `vertexai.project`, `vertexai.location` | Gateway Pod SA must carry `iam.gke.io/gcp-service-account` (Workload Identity) |
+
+For Bedrock and Vertex, KARO cannot mutate the user-owned Gateway's ServiceAccount. The ModelConfig controller surfaces the required annotation in the `GatewayWired` condition message so a platform operator can apply it out-of-band (e.g. `kubectl annotate sa`). Example:
+
+```yaml
+status:
+  conditions:
+    - type: GatewayWired
+      status: "True"
+      reason: ResourcesApplied
+      message: "AgentgatewayBackend and HTTPRoute applied; endpoint=...; Gateway Pod ServiceAccount must carry annotations: iam.gke.io/gcp-service-account=karo-vertex@proj.iam.gserviceaccount.com"
+```
+
+**Controller responsibilities (ModelConfig / ToolSet):**
+- On reconcile, if `spec.gatewayRef` is set, render `AgentgatewayBackend` + `HTTPRoute` (as `unstructured.Unstructured`, so KARO does not take a hard go.mod dependency on agentgateway's or gateway-api's Go types).
+- Attach owner references back to the ModelConfig / ToolSet so generated resources are garbage-collected when the owner is deleted.
+- On `spec.gatewayRef` clearing, delete previously generated resources and strip `status.resolvedEndpoint`.
+- Never mutate the referenced `Gateway` — that's user-owned.
+- Publish the gateway-facing endpoint in `status.resolvedEndpoint` and a `GatewayWired` condition. Rate limits, failover, and budgets are configured and enforced by the gateway itself.
+
+**Stdio MCP tools:** The `stdio` transport has no HTTP endpoint, so it cannot be proxied by an HTTP gateway. When a `ToolSet` with `gatewayRef` contains stdio tools, the controller skips them (no backend generated) and sets the ToolSet phase to `Degraded` with an explanatory message. Agents talking to stdio tools continue to subprocess them inside the agent pod exactly as before.
+
+**End-to-end flow: AgentInstance → Gateway → Model Provider:**
 
 ```mermaid
 sequenceDiagram
     participant AI as AgentInstance Pod
-    participant SC as agent-runtime-mcp sidecar
-    participant AGW as AgentGateway (Deployment)
-    participant MP as Model Provider (Anthropic/Vertex)
+    participant AGW as Gateway (agentgateway.dev)
+    participant MP as Model Provider
     participant FB as Fallback Provider
 
-    AI->>SC: complete_task(task-id, result)
-    SC->>AGW: POST /v1/messages (if ModelConfig.gatewayRef set)
-    AGW->>AGW: policy.rateLimit check (per-agent)
-    AGW->>AGW: policy.budget check
-    AGW->>MP: forward request with provider credentials
-    alt MP healthy and under budget
+    AI->>AGW: POST {resolvedEndpoint}/chat/completions  (OpenAI-compatible)
+    AGW->>AGW: policy: rate limit, budget, auth
+    AGW->>MP: translated provider request (Anthropic / Bedrock SigV4 / Vertex GCP auth)
+    alt healthy and under budget
         MP-->>AGW: 200 OK
-        AGW-->>SC: response
-    else MP error or over budget + failoverEnabled
-        MP-->>AGW: 5xx / rate limited
-        AGW->>FB: failover (modelConfigRef.fallbackOrder[0])
+        AGW-->>AI: response
+    else provider error or over-budget with failover
+        MP-->>AGW: 5xx / rate-limited
+        AGW->>FB: failover (native agentgateway policy)
         FB-->>AGW: 200 OK
-        AGW-->>SC: response
+        AGW-->>AI: response
     end
-    AGW->>AGW: emit karo_agent_gateway_* metrics
 ```
 
 ---
@@ -4901,9 +4911,9 @@ Implement in dependency order:
 
 ```
 1.  SandboxClass        (no deps)
-2.  ModelConfig         (no deps — validates provider credentials)
+2.  ModelConfig         (no deps — validates provider credentials; translates to AgentgatewayBackend when gatewayRef set)
 3.  MemoryStore         (no deps)
-4.  ToolSet             (no deps)
+4.  ToolSet             (no deps; translates to per-tool AgentgatewayBackend + HTTPRoute when gatewayRef set)
 5.  AgentPolicy         (no deps)
 6.  EvalSuite           (no deps — library only)
 7.  AgentSpec           (deps: ModelConfig, MemoryStore, ToolSet, SandboxClass)
@@ -4914,11 +4924,12 @@ Implement in dependency order:
 12. AgentTeam           (deps: AgentSpec, MemoryStore, ToolSet, Dispatcher)
 13. AgentLoop           (deps: AgentSpec, Dispatcher, EvalSuite)
 14. AgentChannel        (deps: AgentTeam, TaskGraph, Dispatcher, AgentMailbox)
-15. AgentGateway        (deps: ModelConfig, ToolSet — resolves upstreams, materializes proxy Deployment + Service)
-16. agent-runtime-mcp   (deps: all CRD types — MCP sidecar, builds separately as cmd/agent-runtime-mcp)
+15. agent-runtime-mcp   (deps: all CRD types — MCP sidecar, builds separately as cmd/agent-runtime-mcp)
 ```
 
-**Note:** Step 16 (`agent-runtime-mcp`) is the MCP sidecar server. It is a separate binary (`cmd/agent-runtime-mcp/main.go`) that imports the CRD types but is not a controller — it runs inside agent pods. It can be implemented in parallel with steps 10-14 since it only depends on the API types, not on controller logic. See the [Agent Runtime Contract](#agent-runtime-contract) section for the full MCP tool specification.
+**Agent Gateway integration is not a separate step** — it lives inside the ModelConfig and ToolSet controllers (steps 2 and 4). The translation helper lives in `internal/gateway/translator.go`; see §15 for the contract.
+
+**Note:** Step 15 (`agent-runtime-mcp`) is the MCP sidecar server. It is a separate binary (`cmd/agent-runtime-mcp/main.go`) that imports the CRD types but is not a controller — it runs inside agent pods. It can be implemented in parallel with steps 10-14 since it only depends on the API types, not on controller logic. See the [Agent Runtime Contract](#agent-runtime-contract) section for the full MCP tool specification.
 
 **Note on TaskGraph ↔ Dispatcher coupling:**
 
@@ -5412,14 +5423,14 @@ func validateNoCycles(tasks []karov1alpha1.Task) error {
 
 ## Roadmap
 
-### v1alpha1 (Initial Release) — 15 CRDs
+### v1alpha1 (Initial Release) — 14 CRDs
 - ModelConfig (Anthropic, OpenAI, AWS Bedrock/IRSA, GKE Vertex/Workload Identity, Ollama)
 - AgentSpec (with workspaceCredentials for git), AgentInstance, AgentTeam
 - MemoryStore (mem0), ToolSet (MCP-only), SandboxClass (pluggable runtimeClassName)
 - AgentLoop, TaskGraph (tasks + evalGate + mutation + spec/status split), Dispatcher, AgentMailbox
 - AgentPolicy (with taskGraph mutation governance), EvalSuite (library + gate runner)
 - AgentChannel (Slack integration, approval gates, multi-team handoff)
-- AgentGateway (request-level proxy for LLM/MCP/A2A; rate limits, budgets, failover, unified observability)
+- Agent Gateway integration (delegation) — `ModelConfig.gatewayRef` and `ToolSet.gatewayRef` render native `AgentgatewayBackend` + Gateway API `HTTPRoute` attached to a user-owned Gateway (see §15). No KARO gateway CRD.
 - `agent-runtime-mcp` sidecar — MCP server auto-injected into every AgentInstance pod (8 tools)
 - Reference agent harnesses: Goose (model-agnostic) and Claude Code (maximum capability, Vertex AI/Bedrock support)
 - Helm chart + Kustomize installation
@@ -5487,9 +5498,9 @@ The following open-source projects operate at layers KARO intentionally leaves t
 
 - **[llm-d](https://github.com/llm-d/llm-d)** — Kubernetes-native distributed LLM inference built on vLLM. Provides high-performance model serving with smart load balancing (KV-cache aware, P/D aware) and scale-to-zero. Fits behind `ModelConfig` as a self-hosted inference backend (reachable via an OpenAI-compatible endpoint). KARO orchestrates agents; llm-d serves the models those agents call.
 
-- **[Agent Gateway](https://github.com/agentgateway/agentgateway)** — Open-source proxy for agent-to-LLM, agent-to-tool, and agent-to-agent traffic using MCP and A2A protocols. Provides request-level governance, observability, failover, and budget controls. As of v0.4.0-alpha (Change 25), KARO promotes the Agent Gateway pattern to a first-class CRD — see Section 15 (`AgentGateway`) for the native integration. `ModelConfig`, `ToolSet`, and `AgentSpec` reference an `AgentGateway` via `gatewayRef`; the controller materializes the gateway Deployment + Service.
+- **[Agent Gateway (agentgateway.dev)](https://github.com/agentgateway/agentgateway)** — Open-source proxy for agent-to-LLM, agent-to-tool, and agent-to-agent traffic using MCP and A2A protocols. Provides request-level governance, observability, failover, and budget controls via its own `AgentgatewayBackend` CRD plus standard Kubernetes Gateway API resources. KARO does not re-implement gateway functionality — it **delegates** to agentgateway.dev. The KARO operator translates `ModelConfig` and `ToolSet` resources (when they carry a `gatewayRef`) into native `AgentgatewayBackend` + `HTTPRoute` objects attached to a user-owned Gateway. See Section 15 for the contract, including provider-specific translation (anthropic, openai, bedrock, vertexai) and the IRSA / Workload Identity wiring required for Bedrock and Vertex.
 
-llm-d remains a complementary inference-serving layer — KARO does not bundle it. AgentGateway, in contrast, is now part of the KARO control plane.
+llm-d remains a complementary inference-serving layer — KARO does not bundle it.
 
 ---
 
