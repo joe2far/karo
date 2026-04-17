@@ -35,6 +35,7 @@ import (
 	karov1alpha1 "github.com/joe2far/karo/api/v1alpha1"
 	"github.com/joe2far/karo/internal/channel"
 	"github.com/joe2far/karo/internal/controller"
+	"github.com/joe2far/karo/internal/gateway"
 	"github.com/joe2far/karo/internal/network"
 	"github.com/joe2far/karo/internal/policy"
 	// +kubebuilder:scaffold:imports
@@ -108,10 +109,13 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "SandboxClass")
 		os.Exit(1)
 	}
+	gatewayTranslator := gateway.NewTranslator(mgr.GetClient(), mgr.GetScheme())
+
 	if err = (&controller.ModelConfigReconciler{
-		Client:   mgr.GetClient(),
-		Scheme:   mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorderFor("modelconfig-controller"),
+		Client:            mgr.GetClient(),
+		Scheme:            mgr.GetScheme(),
+		Recorder:          mgr.GetEventRecorderFor("modelconfig-controller"),
+		GatewayTranslator: gatewayTranslator,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ModelConfig")
 		os.Exit(1)
@@ -125,9 +129,10 @@ func main() {
 		os.Exit(1)
 	}
 	if err = (&controller.ToolSetReconciler{
-		Client:   mgr.GetClient(),
-		Scheme:   mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorderFor("toolset-controller"),
+		Client:            mgr.GetClient(),
+		Scheme:            mgr.GetScheme(),
+		Recorder:          mgr.GetEventRecorderFor("toolset-controller"),
+		GatewayTranslator: gatewayTranslator,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ToolSet")
 		os.Exit(1)

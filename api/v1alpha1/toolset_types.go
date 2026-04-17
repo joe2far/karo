@@ -9,6 +9,14 @@ type ToolSetSpec struct {
 	// +kubebuilder:validation:MinItems=1
 	Tools     []ToolEntry                  `json:"tools"`
 	PolicyRef *corev1.LocalObjectReference `json:"policyRef,omitempty"`
+	// GatewayRef points at a native Gateway API resource
+	// (gateway.networking.k8s.io/v1 Gateway) running the agentgateway.dev
+	// data plane. When set, the ToolSet controller renders an
+	// `AgentgatewayBackend` of type MCP and an `HTTPRoute` per tool, so
+	// agents call MCP tools through the gateway (with its permission
+	// enforcement, rate limits, and audit logging) instead of dialing
+	// each tool endpoint directly.
+	GatewayRef *corev1.LocalObjectReference `json:"gatewayRef,omitempty"`
 }
 
 // +kubebuilder:validation:XValidation:rule="self.transport != 'stdio' || size(self.command) > 0",message="command required for stdio transport"

@@ -20,6 +20,14 @@ type ModelConfigSpec struct {
 	Vertex       *VertexConfig             `json:"vertex,omitempty"`
 	Parameters   ModelParameters           `json:"parameters,omitempty"`
 	RateLimit    ModelRateLimit            `json:"rateLimit,omitempty"`
+	// GatewayRef points at a native Gateway API resource
+	// (gateway.networking.k8s.io/v1 Gateway) running the agentgateway.dev
+	// data plane. When set, the ModelConfig controller renders an
+	// `AgentgatewayBackend` (agentgateway.dev/v1alpha1) plus an `HTTPRoute`
+	// attaching this ModelConfig's provider config to that Gateway. Agents
+	// consuming this ModelConfig dial the gateway endpoint (published in
+	// status.resolvedEndpoint) instead of the provider directly.
+	GatewayRef *corev1.LocalObjectReference `json:"gatewayRef,omitempty"`
 }
 
 type BedrockConfig struct {
