@@ -43,10 +43,10 @@ type SlackConfig struct {
 	SigningSecret       corev1.SecretKeySelector  `json:"signingSecret"`
 	AppToken            *corev1.SecretKeySelector `json:"appToken,omitempty"`
 	// +kubebuilder:validation:MinLength=1
-	ChannelID           string                    `json:"channelId"`
-	SocketMode          bool                      `json:"socketMode,omitempty"`
-	AllowedUserIDs      []string                  `json:"allowedUserIds,omitempty"`
-	ThreadReplies       bool                      `json:"threadReplies,omitempty"`
+	ChannelID      string   `json:"channelId"`
+	SocketMode     bool     `json:"socketMode,omitempty"`
+	AllowedUserIDs []string `json:"allowedUserIds,omitempty"`
+	ThreadReplies  bool     `json:"threadReplies,omitempty"`
 }
 
 type TelegramConfig struct {
@@ -54,44 +54,44 @@ type TelegramConfig struct {
 	ChatID         string                   `json:"chatId,omitempty"`
 	AllowedUserIDs []string                 `json:"allowedUserIds,omitempty"`
 	// +kubebuilder:validation:Enum=allow;deny
-	DMPolicy       string                   `json:"dmPolicy,omitempty"`
-	InlineKeyboard bool                     `json:"inlineKeyboard,omitempty"`
+	DMPolicy       string `json:"dmPolicy,omitempty"`
+	InlineKeyboard bool   `json:"inlineKeyboard,omitempty"`
 }
 
 type DiscordConfig struct {
-	BotTokenSecret       corev1.SecretKeySelector `json:"botTokenSecret"`
+	BotTokenSecret corev1.SecretKeySelector `json:"botTokenSecret"`
 	// +kubebuilder:validation:MinLength=1
-	GuildID              string                   `json:"guildId"`
+	GuildID string `json:"guildId"`
 	// +kubebuilder:validation:MinLength=1
-	ChannelID            string                   `json:"channelId"`
-	AllowedRoleIDs       []string                 `json:"allowedRoleIds,omitempty"`
-	ThreadReplies        bool                     `json:"threadReplies,omitempty"`
-	MessageContentIntent bool                     `json:"messageContentIntent,omitempty"`
+	ChannelID            string   `json:"channelId"`
+	AllowedRoleIDs       []string `json:"allowedRoleIds,omitempty"`
+	ThreadReplies        bool     `json:"threadReplies,omitempty"`
+	MessageContentIntent bool     `json:"messageContentIntent,omitempty"`
 }
 
 type TeamsConfig struct {
 	AppCredentialSecret corev1.SecretKeySelector `json:"appCredentialSecret"`
 	// +kubebuilder:validation:MinLength=1
-	TenantID            string                   `json:"tenantId"`
-	TeamID              string                   `json:"teamId,omitempty"`
-	ChannelID           string                   `json:"channelId,omitempty"`
-	AllowedUserIDs      []string                 `json:"allowedUserIds,omitempty"`
+	TenantID       string   `json:"tenantId"`
+	TeamID         string   `json:"teamId,omitempty"`
+	ChannelID      string   `json:"channelId,omitempty"`
+	AllowedUserIDs []string `json:"allowedUserIds,omitempty"`
 }
 
 type WebhookConfig struct {
 	// +kubebuilder:validation:MinLength=1
-	InboundURL  string                    `json:"inboundUrl"`
+	InboundURL string `json:"inboundUrl"`
 	// +kubebuilder:validation:MinLength=1
 	OutboundURL string                    `json:"outboundUrl"`
 	AuthSecret  *corev1.SecretKeySelector `json:"authSecret,omitempty"`
 }
 
 type InboundConfig struct {
-	DefaultTeamRef    corev1.LocalObjectReference `json:"defaultTeamRef"`
+	DefaultTeamRef corev1.LocalObjectReference `json:"defaultTeamRef"`
 	// +kubebuilder:validation:Enum=task-creation;human-override;auto
-	Mode              InboundMode                 `json:"mode"`
-	TaskGraphTemplate *TaskGraphTemplate          `json:"taskGraphTemplate,omitempty"`
-	AutoRoute         *AutoRouteConfig            `json:"autoRoute,omitempty"`
+	Mode              InboundMode        `json:"mode"`
+	TaskGraphTemplate *TaskGraphTemplate `json:"taskGraphTemplate,omitempty"`
+	AutoRoute         *AutoRouteConfig   `json:"autoRoute,omitempty"`
 }
 
 type InboundMode string
@@ -103,10 +103,10 @@ const (
 )
 
 type TaskGraphTemplate struct {
-	OwnerAgentRef   corev1.LocalObjectReference `json:"ownerAgentRef"`
-	DispatcherRef   corev1.LocalObjectReference `json:"dispatcherRef"`
+	OwnerAgentRef corev1.LocalObjectReference `json:"ownerAgentRef"`
+	DispatcherRef corev1.LocalObjectReference `json:"dispatcherRef"`
 	// +kubebuilder:validation:Enum=design;impl;eval;review;infra;approval
-	InitialTaskType TaskType                    `json:"initialTaskType"`
+	InitialTaskType TaskType `json:"initialTaskType"`
 }
 
 type AutoRouteConfig struct {
@@ -115,7 +115,7 @@ type AutoRouteConfig struct {
 }
 
 type OutboundConfig struct {
-	NotifyOn              []ChannelEvent               `json:"notifyOn"`
+	NotifyOn []ChannelEvent `json:"notifyOn"`
 	// +kubebuilder:validation:Enum=summary;detailed;minimal
 	Format                OutboundFormat               `json:"format"`
 	SummaryModelConfigRef *corev1.LocalObjectReference `json:"summaryModelConfigRef,omitempty"`
@@ -140,13 +140,13 @@ const (
 )
 
 type ApprovalConfig struct {
-	Enabled        bool          `json:"enabled"`
+	Enabled bool `json:"enabled"`
 	// +kubebuilder:validation:Enum=interactive;reply
-	Style          ApprovalStyle `json:"style"`
+	Style ApprovalStyle `json:"style"`
 	// +kubebuilder:validation:Minimum=1
-	TimeoutMinutes int32         `json:"timeoutMinutes,omitempty"`
+	TimeoutMinutes int32 `json:"timeoutMinutes,omitempty"`
 	// +kubebuilder:validation:Enum=Fail;Escalate;Approve
-	OnTimeout      string        `json:"onTimeout"`
+	OnTimeout string `json:"onTimeout"`
 }
 
 type ApprovalStyle string
@@ -157,13 +157,13 @@ const (
 )
 
 type TeamHandoffRule struct {
-	FromTeamRef              corev1.LocalObjectReference `json:"fromTeamRef"`
-	ToTeamRef                corev1.LocalObjectReference `json:"toTeamRef"`
+	FromTeamRef corev1.LocalObjectReference `json:"fromTeamRef"`
+	ToTeamRef   corev1.LocalObjectReference `json:"toTeamRef"`
 	// +kubebuilder:validation:MinLength=1
-	Trigger                  string                      `json:"trigger"`
-	RequireApproval          bool                        `json:"requireApproval"`
-	HandoffTaskGraphTemplate *TaskGraphTemplate          `json:"handoffTaskGraphTemplate,omitempty"`
-	InjectUpstreamContext    bool                        `json:"injectUpstreamContext,omitempty"`
+	Trigger                  string             `json:"trigger"`
+	RequireApproval          bool               `json:"requireApproval"`
+	HandoffTaskGraphTemplate *TaskGraphTemplate `json:"handoffTaskGraphTemplate,omitempty"`
+	InjectUpstreamContext    bool               `json:"injectUpstreamContext,omitempty"`
 }
 
 type AgentChannelActiveTaskGraph struct {

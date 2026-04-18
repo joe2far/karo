@@ -6,20 +6,20 @@ import (
 )
 
 type AgentLoopSpec struct {
-	AgentSpecRef      corev1.LocalObjectReference `json:"agentSpecRef"`
+	AgentSpecRef corev1.LocalObjectReference `json:"agentSpecRef"`
 	// +kubebuilder:validation:MinItems=1
-	Triggers          []LoopTrigger               `json:"triggers"`
-	ContextCarryover  bool                        `json:"contextCarryover,omitempty"`
-	LoopPrompt        *SystemPromptConfig         `json:"loopPrompt,omitempty"`
+	Triggers         []LoopTrigger       `json:"triggers"`
+	ContextCarryover bool                `json:"contextCarryover,omitempty"`
+	LoopPrompt       *SystemPromptConfig `json:"loopPrompt,omitempty"`
 	// +kubebuilder:validation:Minimum=0
-	MaxConcurrent     int32                       `json:"maxConcurrent,omitempty"`
+	MaxConcurrent int32 `json:"maxConcurrent,omitempty"`
 	// +kubebuilder:validation:Enum=Allow;Forbid;Replace
 	ConcurrencyPolicy string                      `json:"concurrencyPolicy,omitempty"`
 	DispatcherRef     corev1.LocalObjectReference `json:"dispatcherRef"`
 	EvalGate          *LoopEvalGate               `json:"evalGate,omitempty"`
 }
 
-// +kubebuilder:validation:XValidation:rule="self.type != 'cron' || self.schedule != ''",message="schedule required for cron triggers"
+// +kubebuilder:validation:XValidation:rule="self.type != 'cron' || self.schedule != ”",message="schedule required for cron triggers"
 // +kubebuilder:validation:XValidation:rule="self.type != 'event' || has(self.source)",message="source required for event triggers"
 type LoopTrigger struct {
 	// +kubebuilder:validation:Enum=cron;event;webhook
@@ -30,9 +30,9 @@ type LoopTrigger struct {
 
 type EventSource struct {
 	// +kubebuilder:validation:MinLength=1
-	Kind  string `json:"kind"`
+	Kind string `json:"kind"`
 	// +kubebuilder:validation:MinLength=1
-	Name  string `json:"name"`
+	Name string `json:"name"`
 	// +kubebuilder:validation:MinLength=1
 	Event string `json:"event"`
 }
@@ -42,7 +42,7 @@ type LoopEvalGate struct {
 	EvalSuiteRef corev1.LocalObjectReference `json:"evalSuiteRef"`
 	// +kubebuilder:validation:Minimum=0
 	// +kubebuilder:validation:Maximum=1
-	MinPassRate  float64                     `json:"minPassRate"`
+	MinPassRate float64 `json:"minPassRate"`
 }
 
 type AgentLoopStatus struct {

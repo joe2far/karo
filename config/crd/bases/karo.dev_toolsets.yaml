@@ -150,7 +150,7 @@ spec:
                   - message: command required for stdio transport
                     rule: self.transport != 'stdio' || size(self.command) > 0
                   - message: endpoint required for sse and streamable-http transport
-                    rule: self.transport == 'stdio' || self.endpoint != ''
+                    rule: self.transport == 'stdio' || self.endpoint != ”
                 minItems: 1
                 type: array
             required:

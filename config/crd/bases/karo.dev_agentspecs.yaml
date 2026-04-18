@@ -104,7 +104,7 @@ spec:
                       x-kubernetes-validations:
                       - message: either inline (non-empty) or configMapRef must be
                           set
-                        rule: (has(self.inline) && self.inline != '') || has(self.configMapRef)
+                        rule: (has(self.inline) && self.inline != ”) || has(self.configMapRef)
                   required:
                   - name
                   type: object
@@ -309,7 +309,7 @@ spec:
                 type: object
                 x-kubernetes-validations:
                 - message: either inline (non-empty) or configMapRef must be set
-                  rule: (has(self.inline) && self.inline != '') || has(self.configMapRef)
+                  rule: (has(self.inline) && self.inline != ”) || has(self.configMapRef)
               toolSetRef:
                 description: |-
                   LocalObjectReference contains enough information to let you locate the
@@ -396,7 +396,7 @@ spec:
             - message: maxInstances must be >= minInstances
               rule: self.scaling.maxInstances >= self.scaling.minInstances
             - message: runtime.image is required
-              rule: self.runtime.image != ''
+              rule: self.runtime.image != ”
           status:
             properties:
               activeInstances:

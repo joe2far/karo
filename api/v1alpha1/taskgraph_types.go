@@ -7,12 +7,12 @@ import (
 
 // TaskGraphSpec defines the desired state of TaskGraph
 type TaskGraphSpec struct {
-	Description    string                      `json:"description,omitempty"`
-	OwnerAgentRef  corev1.LocalObjectReference `json:"ownerAgentRef"`
-	DispatcherRef  corev1.LocalObjectReference `json:"dispatcherRef"`
+	Description   string                      `json:"description,omitempty"`
+	OwnerAgentRef corev1.LocalObjectReference `json:"ownerAgentRef"`
+	DispatcherRef corev1.LocalObjectReference `json:"dispatcherRef"`
 	// +kubebuilder:validation:MinItems=1
-	Tasks          []Task                      `json:"tasks"`
-	DispatchPolicy DispatchPolicy              `json:"dispatchPolicy"`
+	Tasks          []Task         `json:"tasks"`
+	DispatchPolicy DispatchPolicy `json:"dispatchPolicy"`
 }
 
 // +kubebuilder:validation:XValidation:rule="!self.deps.exists(d, d == self.id)",message="task cannot depend on itself"
@@ -20,17 +20,17 @@ type Task struct {
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=253
 	// +kubebuilder:validation:Pattern=`^[a-z0-9]([a-z0-9\-]*[a-z0-9])?$`
-	ID                   string                       `json:"id"`
+	ID string `json:"id"`
 	// +kubebuilder:validation:MinLength=1
-	Title                string                       `json:"title"`
+	Title string `json:"title"`
 	// +kubebuilder:validation:Enum=design;impl;eval;review;infra;approval
-	Type                 TaskType                     `json:"type"`
-	Description          string                       `json:"description,omitempty"`
-	Deps                 []string                     `json:"deps"`
+	Type        TaskType `json:"type"`
+	Description string   `json:"description,omitempty"`
+	Deps        []string `json:"deps"`
 	// +kubebuilder:validation:Enum=High;Medium;Low
-	Priority             TaskPriority                 `json:"priority"`
-	AddedBy              string                       `json:"addedBy"`
-	AddedAt              metav1.Time                  `json:"addedAt"`
+	Priority TaskPriority `json:"priority"`
+	AddedBy  string       `json:"addedBy"`
+	AddedAt  metav1.Time  `json:"addedAt"`
 	// +kubebuilder:validation:Minimum=1
 	TimeoutMinutes       *int32                       `json:"timeoutMinutes,omitempty"`
 	AcceptanceCriteria   []string                     `json:"acceptanceCriteria,omitempty"`
@@ -62,9 +62,9 @@ type EvalGate struct {
 	EvalSuiteRef corev1.LocalObjectReference `json:"evalSuiteRef"`
 	// +kubebuilder:validation:Minimum=0
 	// +kubebuilder:validation:Maximum=1
-	MinPassRate  float64                     `json:"minPassRate"`
+	MinPassRate float64 `json:"minPassRate"`
 	// +kubebuilder:validation:Enum=Reopen;Escalate
-	OnFail       EvalGateFailAction          `json:"onFail"`
+	OnFail EvalGateFailAction `json:"onFail"`
 }
 
 type EvalGateFailAction string
@@ -76,7 +76,7 @@ const (
 
 type DispatchPolicy struct {
 	// +kubebuilder:validation:Minimum=0
-	MaxConcurrent         int32       `json:"maxConcurrent"`
+	MaxConcurrent int32 `json:"maxConcurrent"`
 	// +kubebuilder:validation:Minimum=1
 	DefaultTimeoutMinutes *int32      `json:"defaultTimeoutMinutes,omitempty"`
 	RetryPolicy           RetryPolicy `json:"retryPolicy"`
@@ -85,11 +85,11 @@ type DispatchPolicy struct {
 
 type RetryPolicy struct {
 	// +kubebuilder:validation:Minimum=0
-	MaxRetries     int32  `json:"maxRetries"`
+	MaxRetries int32 `json:"maxRetries"`
 	// +kubebuilder:validation:Minimum=0
-	BackoffSeconds int32  `json:"backoffSeconds"`
+	BackoffSeconds int32 `json:"backoffSeconds"`
 	// +kubebuilder:validation:Enum=EscalateToHuman;Fail;Reopen
-	OnExhaustion   string `json:"onExhaustion"`
+	OnExhaustion string `json:"onExhaustion"`
 }
 
 // TaskGraphStatus defines the observed state of TaskGraph

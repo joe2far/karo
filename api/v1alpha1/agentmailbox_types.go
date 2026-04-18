@@ -7,23 +7,23 @@ import (
 )
 
 type AgentMailboxSpec struct {
-	AgentSpecRef         corev1.LocalObjectReference `json:"agentSpecRef"`
+	AgentSpecRef corev1.LocalObjectReference `json:"agentSpecRef"`
 	// +kubebuilder:validation:MinItems=1
-	AcceptedMessageTypes []MessageType               `json:"acceptedMessageTypes"`
+	AcceptedMessageTypes []MessageType `json:"acceptedMessageTypes"`
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=10000
 	// +kubebuilder:default=100
-	MaxPendingMessages   int32                       `json:"maxPendingMessages,omitempty"`
+	MaxPendingMessages int32 `json:"maxPendingMessages,omitempty"`
 	// +kubebuilder:validation:Minimum=0
-	MaxMessageSizeBytes  int32                       `json:"maxMessageSizeBytes,omitempty"`
-	Delivery             DeliveryConfig              `json:"delivery"`
+	MaxMessageSizeBytes int32          `json:"maxMessageSizeBytes,omitempty"`
+	Delivery            DeliveryConfig `json:"delivery"`
 }
 
 type DeliveryConfig struct {
 	// +kubebuilder:validation:Enum=pull;push
-	Type                   string `json:"type"`
+	Type string `json:"type"`
 	// +kubebuilder:validation:Minimum=1
-	PollingIntervalSeconds int32  `json:"pollingIntervalSeconds,omitempty"`
+	PollingIntervalSeconds int32 `json:"pollingIntervalSeconds,omitempty"`
 }
 
 type MessageType string
@@ -48,11 +48,11 @@ type AgentMailboxStatus struct {
 }
 
 type MailboxMessage struct {
-	MessageType MessageType              `json:"messageType"`
+	MessageType MessageType `json:"messageType"`
 	// +kubebuilder:validation:MinLength=1
-	MessageID   string                   `json:"messageId"`
-	Timestamp   metav1.Time              `json:"timestamp"`
-	Payload     *runtime.RawExtension    `json:"payload"`
+	MessageID string                `json:"messageId"`
+	Timestamp metav1.Time           `json:"timestamp"`
+	Payload   *runtime.RawExtension `json:"payload"`
 }
 
 type TaskAssignedPayload struct {

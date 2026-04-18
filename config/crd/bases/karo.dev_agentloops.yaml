@@ -138,7 +138,7 @@ spec:
                 type: object
                 x-kubernetes-validations:
                 - message: either inline (non-empty) or configMapRef must be set
-                  rule: (has(self.inline) && self.inline != '') || has(self.configMapRef)
+                  rule: (has(self.inline) && self.inline != ”) || has(self.configMapRef)
               maxConcurrent:
                 format: int32
                 minimum: 0
@@ -175,7 +175,7 @@ spec:
                   type: object
                   x-kubernetes-validations:
                   - message: schedule required for cron triggers
-                    rule: self.type != 'cron' || self.schedule != ''
+                    rule: self.type != 'cron' || self.schedule != ”
                   - message: source required for event triggers
                     rule: self.type != 'event' || has(self.source)
                 minItems: 1

@@ -330,7 +330,7 @@ func (r *AgentInstanceReconciler) findTeamForAgent(ctx context.Context, agentSpe
 func (r *AgentInstanceReconciler) buildPod(instance *karov1alpha1.AgentInstance, agentSpec *karov1alpha1.AgentSpec, podName string, bindings *EffectiveBindings) *corev1.Pod {
 	labels := map[string]string{
 		"karo.dev/agent-instance": instance.Name,
-		"karo.dev/agent-spec":    agentSpec.Name,
+		"karo.dev/agent-spec":     agentSpec.Name,
 	}
 
 	// Build environment variables

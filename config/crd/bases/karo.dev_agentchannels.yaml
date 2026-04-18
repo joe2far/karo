@@ -92,7 +92,7 @@ spec:
                         x-kubernetes-validations:
                         - message: either inline (non-empty) or configMapRef must
                             be set
-                          rule: (has(self.inline) && self.inline != '') || has(self.configMapRef)
+                          rule: (has(self.inline) && self.inline != ”) || has(self.configMapRef)
                       modelConfigRef:
                         description: |-
                           LocalObjectReference contains enough information to let you locate the

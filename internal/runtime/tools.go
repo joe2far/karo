@@ -69,10 +69,10 @@ func (h *ToolHandler) ListTools() []ToolDefinition {
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
-					"taskGraphName":    map[string]interface{}{"type": "string"},
-					"taskId":           map[string]interface{}{"type": "string"},
+					"taskGraphName":     map[string]interface{}{"type": "string"},
+					"taskId":            map[string]interface{}{"type": "string"},
 					"resultArtifactRef": map[string]interface{}{"type": "string"},
-					"notes":            map[string]interface{}{"type": "string"},
+					"notes":             map[string]interface{}{"type": "string"},
 				},
 				"required": []string{"taskGraphName", "taskId", "resultArtifactRef"},
 			},
@@ -255,10 +255,10 @@ func (h *ToolHandler) ackMessage(ctx context.Context, args json.RawMessage) (jso
 
 func (h *ToolHandler) completeTask(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
 	var params struct {
-		TaskGraphName    string `json:"taskGraphName"`
-		TaskID           string `json:"taskId"`
+		TaskGraphName     string `json:"taskGraphName"`
+		TaskID            string `json:"taskId"`
 		ResultArtifactRef string `json:"resultArtifactRef"`
-		Notes            string `json:"notes"`
+		Notes             string `json:"notes"`
 	}
 	if err := json.Unmarshal(args, &params); err != nil {
 		return nil, err
