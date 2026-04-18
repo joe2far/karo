@@ -150,9 +150,9 @@ func (r *EvalSuiteReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	evalSuite.Status.TotalCases = totalCases
 
 	if degraded {
-		evalSuite.Status.Phase = "Degraded"
+		evalSuite.Status.Phase = PhaseDegraded
 		setCondition(&evalSuite.Status.Conditions, metav1.Condition{
-			Type:               "Ready",
+			Type:               PhaseReady,
 			Status:             metav1.ConditionFalse,
 			ObservedGeneration: evalSuite.Generation,
 			LastTransitionTime: metav1.Now(),
@@ -160,9 +160,9 @@ func (r *EvalSuiteReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			Message:            fmt.Sprintf("EvalSuite validation failed: %v", degradedReasons),
 		})
 	} else {
-		evalSuite.Status.Phase = "Ready"
+		evalSuite.Status.Phase = PhaseReady
 		setCondition(&evalSuite.Status.Conditions, metav1.Condition{
-			Type:               "Ready",
+			Type:               PhaseReady,
 			Status:             metav1.ConditionTrue,
 			ObservedGeneration: evalSuite.Generation,
 			LastTransitionTime: metav1.Now(),

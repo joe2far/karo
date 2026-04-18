@@ -60,7 +60,7 @@ func (r *AgentTeamReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			continue
 		}
 
-		if agentSpec.Status.Phase == "Ready" {
+		if agentSpec.Status.Phase == PhaseReady {
 			readyAgents++
 		} else {
 			degradedReasons = append(degradedReasons, fmt.Sprintf("AgentSpec %q is not Ready (phase: %s)", agentSpec.Name, agentSpec.Status.Phase))
@@ -80,11 +80,11 @@ func (r *AgentTeamReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	// Determine phase
 	switch {
 	case readyAgents == 0 && totalAgents > 0:
-		team.Status.Phase = "Degraded"
+		team.Status.Phase = PhaseDegraded
 	case readyAgents < totalAgents:
 		team.Status.Phase = "Partial"
 	default:
-		team.Status.Phase = "Ready"
+		team.Status.Phase = PhaseReady
 	}
 
 	// Set AllAgentsReady condition

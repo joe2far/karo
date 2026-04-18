@@ -38,10 +38,10 @@ git config --global credential.helper store
 
 // BuildGitEnvVars creates environment variables for git credentials.
 func BuildGitEnvVars(agentSpec *karov1alpha1.AgentSpec, secrets map[string]string) []corev1.EnvVar {
-	var envVars []corev1.EnvVar
 	if agentSpec.Spec.WorkspaceCredentials == nil {
-		return envVars
+		return nil
 	}
+	envVars := make([]corev1.EnvVar, 0, len(agentSpec.Spec.WorkspaceCredentials.Git)*3)
 	for i, cred := range agentSpec.Spec.WorkspaceCredentials.Git {
 		envVars = append(envVars,
 			corev1.EnvVar{

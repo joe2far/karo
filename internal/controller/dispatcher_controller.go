@@ -170,14 +170,14 @@ func (r *DispatcherReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 
 	// Update Dispatcher status.
-	dispatcher.Status.Phase = "Active"
+	dispatcher.Status.Phase = PhaseActive
 	dispatcher.Status.PendingTasks = pendingTasks
 	dispatcher.Status.TotalDispatched = totalDispatched
 	now := metav1.Now()
 	dispatcher.Status.LastDispatchedAt = &now
 
 	setCondition(&dispatcher.Status.Conditions, metav1.Condition{
-		Type:               "Ready",
+		Type:               PhaseReady,
 		Status:             metav1.ConditionTrue,
 		ObservedGeneration: dispatcher.Generation,
 		LastTransitionTime: metav1.Now(),

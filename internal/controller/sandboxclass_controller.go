@@ -77,7 +77,7 @@ func (r *SandboxClassReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	// Validate network policy configuration.
 	np := sandboxClass.Spec.NetworkPolicy
 	switch np.Egress {
-	case "restricted", "open", "none", "":
+	case SandboxModeRestricted, SandboxModeOpen, SandboxModeNone, "":
 		// Valid values.
 	default:
 		warnings = append(warnings, fmt.Sprintf("unsupported egress policy: %s (supported: restricted, open, none)", np.Egress))
@@ -105,7 +105,7 @@ func (r *SandboxClassReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			warnings = append(warnings, fmt.Sprintf("failed to ensure network policy: %v", err))
 			r.Recorder.Eventf(&sandboxClass, "Warning", "NetworkPolicyFailed",
 				"Failed to create/update network policy: %v", err)
-		} else if np.Egress == "restricted" {
+		} else if np.Egress == SandboxModeRestricted {
 			r.Recorder.Eventf(&sandboxClass, "Normal", "NetworkPolicyApplied",
 				"Network policy applied via %s (domains: %d, CIDRs: %d)",
 				cniType, len(np.AllowedDomains), len(np.AllowedCIDRs))
@@ -116,7 +116,7 @@ func (r *SandboxClassReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	sandboxClass.Status.RuntimeClassAvailable = runtimeClassAvailable
 
 	if len(warnings) > 0 {
-		sandboxClass.Status.Phase = "Degraded"
+		sandboxClass.Status.Phase = PhaseDegraded
 		setCondition(&sandboxClass.Status.Conditions, metav1.Condition{
 			Type:               "ConfigValid",
 			Status:             metav1.ConditionFalse,
@@ -126,7 +126,7 @@ func (r *SandboxClassReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			Message:            fmt.Sprintf("Configuration warnings: %v", warnings),
 		})
 	} else {
-		sandboxClass.Status.Phase = "Ready"
+		sandboxClass.Status.Phase = PhaseReady
 		setCondition(&sandboxClass.Status.Conditions, metav1.Condition{
 			Type:               "ConfigValid",
 			Status:             metav1.ConditionTrue,
@@ -138,7 +138,7 @@ func (r *SandboxClassReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	}
 
 	// Set NetworkPolicy condition.
-	if np.Egress == "restricted" || np.Egress == "none" {
+	if np.Egress == SandboxModeRestricted || np.Egress == "none" {
 		npCondStatus := metav1.ConditionTrue
 		npReason := "PolicyApplied"
 		npMsg := fmt.Sprintf("Network policy enforced via %s", cniType)

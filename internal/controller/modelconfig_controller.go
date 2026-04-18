@@ -72,7 +72,7 @@ func (r *ModelConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	// Validate provider.
 	if modelConfig.Spec.Provider == "" {
-		modelConfig.Status.Phase = "Error"
+		modelConfig.Status.Phase = PhaseError
 		setCondition(&modelConfig.Status.Conditions, metav1.Condition{
 			Type:               "CredentialsValid",
 			Status:             metav1.ConditionFalse,
@@ -121,7 +121,7 @@ func (r *ModelConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	// Update status.
-	modelConfig.Status.Phase = "Ready"
+	modelConfig.Status.Phase = PhaseReady
 	modelConfig.Status.Provider = modelConfig.Spec.Provider
 	now := metav1.Now()
 	modelConfig.Status.LastValidatedAt = &now
@@ -131,7 +131,7 @@ func (r *ModelConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if !credentialsValid {
 		conditionStatus = metav1.ConditionFalse
 		reason = "CredentialsMissing"
-		modelConfig.Status.Phase = "Error"
+		modelConfig.Status.Phase = PhaseError
 	}
 
 	setCondition(&modelConfig.Status.Conditions, metav1.Condition{
@@ -185,7 +185,7 @@ func (r *ModelConfigReconciler) reconcileGateway(ctx context.Context, mc *karov1
 
 	endpoint, err := r.GatewayTranslator.EnsureModelConfigResources(ctx, mc)
 	if err != nil {
-		mc.Status.Phase = "Degraded"
+		mc.Status.Phase = PhaseDegraded
 		setCondition(&mc.Status.Conditions, metav1.Condition{
 			Type:               "GatewayWired",
 			Status:             metav1.ConditionFalse,

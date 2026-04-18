@@ -53,9 +53,9 @@ func (r *AgentMailboxReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		r.Recorder.Eventf(&mailbox, corev1.EventTypeWarning, "AgentSpecNotFound",
 			"Referenced AgentSpec %s not found", mailbox.Spec.AgentSpecRef.Name)
 
-		mailbox.Status.Phase = "Degraded"
+		mailbox.Status.Phase = PhaseDegraded
 		condition := metav1.Condition{
-			Type:               "Active",
+			Type:               PhaseActive,
 			Status:             metav1.ConditionFalse,
 			ObservedGeneration: mailbox.Generation,
 			LastTransitionTime: metav1.Now(),
@@ -72,7 +72,7 @@ func (r *AgentMailboxReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	}
 
 	// Set phase to Active
-	mailbox.Status.Phase = "Active"
+	mailbox.Status.Phase = PhaseActive
 
 	// Recompute pending count
 	r.recomputeMailboxStatus(&mailbox)
@@ -84,7 +84,7 @@ func (r *AgentMailboxReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 	// Set Active condition
 	activeCondition := metav1.Condition{
-		Type:               "Active",
+		Type:               PhaseActive,
 		Status:             metav1.ConditionTrue,
 		ObservedGeneration: mailbox.Generation,
 		LastTransitionTime: metav1.Now(),

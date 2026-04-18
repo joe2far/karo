@@ -138,7 +138,7 @@ func (r *ToolSetReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	toolSet.Status.AvailableTools = reachableCount
 
 	if len(validationErrors) > 0 && reachableCount < toolCount {
-		toolSet.Status.Phase = "Degraded"
+		toolSet.Status.Phase = PhaseDegraded
 		setCondition(&toolSet.Status.Conditions, metav1.Condition{
 			Type:               "AllToolsReachable",
 			Status:             metav1.ConditionFalse,
@@ -148,7 +148,7 @@ func (r *ToolSetReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			Message:            fmt.Sprintf("%d/%d tools reachable: %v", reachableCount, toolCount, validationErrors),
 		})
 	} else {
-		toolSet.Status.Phase = "Ready"
+		toolSet.Status.Phase = PhaseReady
 		setCondition(&toolSet.Status.Conditions, metav1.Condition{
 			Type:               "AllToolsReachable",
 			Status:             metav1.ConditionTrue,
@@ -193,7 +193,7 @@ func (r *ToolSetReconciler) reconcileGateway(ctx context.Context, ts *karov1alph
 
 	endpoint, routable, err := r.GatewayTranslator.EnsureToolSetResources(ctx, ts)
 	if err != nil {
-		ts.Status.Phase = "Degraded"
+		ts.Status.Phase = PhaseDegraded
 		reason := "TranslationFailed"
 		if !routable {
 			// No routable tools (all stdio). Everything else reconciled

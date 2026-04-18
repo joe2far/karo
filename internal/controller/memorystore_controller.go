@@ -62,7 +62,7 @@ func (r *MemoryStoreReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// Validate backend type.
 	if memoryStore.Spec.Backend.Type == "" {
 		logger.Info("MemoryStore has no backend type set")
-		memoryStore.Status.Phase = "Error"
+		memoryStore.Status.Phase = PhaseError
 		setCondition(&memoryStore.Status.Conditions, metav1.Condition{
 			Type:               "BackendReachable",
 			Status:             metav1.ConditionFalse,
@@ -167,7 +167,7 @@ func (r *MemoryStoreReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	// Update status.
 	if backendReachable {
-		memoryStore.Status.Phase = "Ready"
+		memoryStore.Status.Phase = PhaseReady
 		setCondition(&memoryStore.Status.Conditions, metav1.Condition{
 			Type:               "BackendReachable",
 			Status:             metav1.ConditionTrue,
@@ -177,7 +177,7 @@ func (r *MemoryStoreReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			Message:            backendMsg,
 		})
 	} else {
-		memoryStore.Status.Phase = "Error"
+		memoryStore.Status.Phase = PhaseError
 		setCondition(&memoryStore.Status.Conditions, metav1.Condition{
 			Type:               "BackendReachable",
 			Status:             metav1.ConditionFalse,

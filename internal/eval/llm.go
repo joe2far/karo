@@ -91,7 +91,7 @@ func (c *HTTPLLMCaller) callAnthropic(ctx context.Context, model, apiKey, prompt
 	if err != nil {
 		return false, fmt.Errorf("anthropic API call failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
@@ -143,7 +143,7 @@ func (c *HTTPLLMCaller) callOpenAI(ctx context.Context, model, apiKey, prompt st
 	if err != nil {
 		return false, fmt.Errorf("openai API call failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)

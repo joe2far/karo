@@ -3,7 +3,8 @@
 # https://github.com/ultraworkers/claw-code
 
 # --- Build stage: compile claw-cli from source ---
-FROM rust:1.82-slim AS builder
+# Use nightly Rust for edition2024 support required by claw-code dependencies
+FROM rustlang/rust:nightly-slim AS builder
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends git pkg-config libssl-dev && \

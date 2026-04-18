@@ -63,9 +63,9 @@ func (r *AgentPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// Validate targetSelector.
 	selector, err := metav1.LabelSelectorAsSelector(&agentPolicy.Spec.TargetSelector)
 	if err != nil {
-		agentPolicy.Status.Phase = "Error"
+		agentPolicy.Status.Phase = PhaseError
 		setCondition(&agentPolicy.Status.Conditions, metav1.Condition{
-			Type:               "Active",
+			Type:               PhaseActive,
 			Status:             metav1.ConditionFalse,
 			ObservedGeneration: agentPolicy.Generation,
 			LastTransitionTime: metav1.Now(),
@@ -120,12 +120,12 @@ func (r *AgentPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	// Update status.
-	agentPolicy.Status.Phase = "Active"
+	agentPolicy.Status.Phase = PhaseActive
 	now := metav1.Now()
 	agentPolicy.Status.LastEvaluatedAt = &now
 
 	setCondition(&agentPolicy.Status.Conditions, metav1.Condition{
-		Type:               "Active",
+		Type:               PhaseActive,
 		Status:             metav1.ConditionTrue,
 		ObservedGeneration: agentPolicy.Generation,
 		LastTransitionTime: metav1.Now(),

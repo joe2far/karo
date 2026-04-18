@@ -143,10 +143,10 @@ func (r *AgentLoopReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	// All checks passed -- set phase to Active.
-	loop.Status.Phase = "Active"
+	loop.Status.Phase = PhaseActive
 
 	setCondition(&loop.Status.Conditions, metav1.Condition{
-		Type:               "Ready",
+		Type:               PhaseReady,
 		Status:             metav1.ConditionTrue,
 		ObservedGeneration: loop.Generation,
 		LastTransitionTime: metav1.Now(),

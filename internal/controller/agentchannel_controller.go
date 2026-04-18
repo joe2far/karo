@@ -75,7 +75,7 @@ func (r *AgentChannelReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	credentialsValid, credMsg := r.validatePlatformCredentials(ctx, &ch)
 
 	if !credentialsValid {
-		ch.Status.Phase = "Error"
+		ch.Status.Phase = PhaseError
 		ch.Status.PlatformConnected = false
 		setCondition(&ch.Status.Conditions, metav1.Condition{
 			Type:               "PlatformConnected",
@@ -97,7 +97,7 @@ func (r *AgentChannelReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	if r.GatewayManager != nil {
 		if err := r.GatewayManager.EnsureGateway(ctx, &ch); err != nil {
 			logger.Error(err, "failed to ensure channel gateway")
-			ch.Status.Phase = "Error"
+			ch.Status.Phase = PhaseError
 			setCondition(&ch.Status.Conditions, metav1.Condition{
 				Type:               "GatewayReady",
 				Status:             metav1.ConditionFalse,
@@ -136,7 +136,7 @@ func (r *AgentChannelReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	}
 
 	// All credentials validated — set phase to Active.
-	ch.Status.Phase = "Active"
+	ch.Status.Phase = PhaseActive
 	ch.Status.PlatformConnected = true
 
 	setCondition(&ch.Status.Conditions, metav1.Condition{
@@ -152,7 +152,7 @@ func (r *AgentChannelReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	r.handleApprovalTasks(ctx, &ch)
 
 	setCondition(&ch.Status.Conditions, metav1.Condition{
-		Type:               "Ready",
+		Type:               PhaseReady,
 		Status:             metav1.ConditionTrue,
 		ObservedGeneration: ch.Generation,
 		LastTransitionTime: metav1.Now(),

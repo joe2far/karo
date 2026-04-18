@@ -58,7 +58,7 @@ func (r *AgentSpecReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		degradedReasons = append(degradedReasons, fmt.Sprintf("ModelConfig %q not found", agentSpec.Spec.ModelConfigRef.Name))
 		r.Recorder.Eventf(&agentSpec, corev1.EventTypeWarning, "ModelConfigNotFound",
 			"Referenced ModelConfig %s not found", agentSpec.Spec.ModelConfigRef.Name)
-	} else if modelConfig.Status.Phase != "Ready" {
+	} else if modelConfig.Status.Phase != PhaseReady {
 		degraded = true
 		degradedReasons = append(degradedReasons, fmt.Sprintf("ModelConfig %q is not Ready (phase: %s)", modelConfig.Name, modelConfig.Status.Phase))
 	} else {
@@ -112,9 +112,9 @@ func (r *AgentSpecReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	// Set phase
 	if degraded {
-		agentSpec.Status.Phase = "Degraded"
+		agentSpec.Status.Phase = PhaseDegraded
 	} else {
-		agentSpec.Status.Phase = "Ready"
+		agentSpec.Status.Phase = PhaseReady
 	}
 
 	now := metav1.Now()
@@ -123,7 +123,7 @@ func (r *AgentSpecReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	// Set Ready condition
 	if degraded {
 		readyCondition := metav1.Condition{
-			Type:               "Ready",
+			Type:               PhaseReady,
 			Status:             metav1.ConditionFalse,
 			ObservedGeneration: agentSpec.Generation,
 			LastTransitionTime: metav1.Now(),
@@ -133,7 +133,7 @@ func (r *AgentSpecReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		setCondition(&agentSpec.Status.Conditions, readyCondition)
 	} else {
 		readyCondition := metav1.Condition{
-			Type:               "Ready",
+			Type:               PhaseReady,
 			Status:             metav1.ConditionTrue,
 			ObservedGeneration: agentSpec.Generation,
 			LastTransitionTime: metav1.Now(),

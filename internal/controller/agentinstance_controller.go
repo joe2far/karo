@@ -50,6 +50,111 @@ type AgentInstanceReconciler struct {
 	Recorder record.EventRecorder
 }
 
+// handleOnDemandStart checks if an OnDemand agent should start based on mailbox state
+func (r *AgentInstanceReconciler) handleOnDemandStart(ctx context.Context, instance *karov1alpha1.AgentInstance, agentSpec *karov1alpha1.AgentSpec) (ctrl.Result, bool, error) {
+	if agentSpec.Spec.Scaling.StartPolicy != karov1alpha1.StartPolicyOnDemand {
+		return ctrl.Result{}, false, nil
+	}
+
+	mailboxName := fmt.Sprintf("%s-mailbox", agentSpec.Name)
+	var mailbox karov1alpha1.AgentMailbox
+	mailboxKey := types.NamespacedName{Name: mailboxName, Namespace: instance.Namespace}
+
+	if err := r.Get(ctx, mailboxKey, &mailbox); err != nil {
+		if instance.Status.Phase == "" || instance.Status.Phase == karov1alpha1.AgentInstancePhasePending {
+			instance.Status.Phase = karov1alpha1.AgentInstancePhaseHibernated
+			setCondition(&instance.Status.Conditions, metav1.Condition{
+				Type:               PhaseReady,
+				Status:             metav1.ConditionFalse,
+				ObservedGeneration: instance.Generation,
+				LastTransitionTime: metav1.Now(),
+				Reason:             "OnDemandNoMailbox",
+				Message:            "OnDemand: mailbox not found, hibernating",
+			})
+			if statusErr := r.Status().Update(ctx, instance); statusErr != nil {
+				return ctrl.Result{}, true, statusErr
+			}
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, true, nil
+		}
+	} else if mailbox.Status.PendingCount == 0 {
+		if instance.Status.Phase == "" || instance.Status.Phase == karov1alpha1.AgentInstancePhasePending {
+			instance.Status.Phase = karov1alpha1.AgentInstancePhaseHibernated
+			setCondition(&instance.Status.Conditions, metav1.Condition{
+				Type:               PhaseReady,
+				Status:             metav1.ConditionFalse,
+				ObservedGeneration: instance.Generation,
+				LastTransitionTime: metav1.Now(),
+				Reason:             "OnDemandNoMessages",
+				Message:            "OnDemand: no pending messages, hibernating",
+			})
+			if statusErr := r.Status().Update(ctx, instance); statusErr != nil {
+				return ctrl.Result{}, true, statusErr
+			}
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, true, nil
+		}
+	}
+	return ctrl.Result{}, false, nil
+}
+
+// handleContextExhaustion checks and handles context token exhaustion
+func (r *AgentInstanceReconciler) handleContextExhaustion(ctx context.Context, instance *karov1alpha1.AgentInstance, agentSpec *karov1alpha1.AgentSpec, existingPod *corev1.Pod, podExists bool) error {
+	logger := log.FromContext(ctx)
+	if instance.Status.Phase != karov1alpha1.AgentInstancePhaseRunning {
+		return nil
+	}
+	if agentSpec.Spec.MaxContextTokens <= 0 || instance.Status.ContextTokensUsed < agentSpec.Spec.MaxContextTokens {
+		return nil
+	}
+
+	switch agentSpec.Spec.OnContextExhaustion {
+	case "terminate":
+		instance.Status.Phase = karov1alpha1.AgentInstancePhaseTerminated
+		r.Recorder.Event(instance, corev1.EventTypeWarning, "ContextExhausted", "Context tokens exhausted, terminating agent")
+	case "checkpoint":
+		if podExists {
+			if err := r.Delete(ctx, existingPod); err != nil && !errors.IsNotFound(err) {
+				logger.Error(err, "failed to delete pod for checkpoint")
+			}
+		}
+		instance.Status.Phase = karov1alpha1.AgentInstancePhaseHibernated
+		instance.Status.PodRef = nil
+		r.Recorder.Event(instance, corev1.EventTypeWarning, "ContextExhausted", "Context tokens exhausted, checkpointing agent")
+	default: // "restart"
+		if podExists {
+			if err := r.Delete(ctx, existingPod); err != nil && !errors.IsNotFound(err) {
+				logger.Error(err, "failed to delete pod for restart")
+			}
+		}
+		instance.Status.ContextTokensUsed = 0
+		instance.Status.Phase = karov1alpha1.AgentInstancePhasePending
+		r.Recorder.Event(instance, corev1.EventTypeWarning, "ContextExhausted", "Context tokens exhausted, restarting agent")
+	}
+	return nil
+}
+
+// handleHibernation checks if an idle agent should be hibernated
+func (r *AgentInstanceReconciler) handleHibernation(ctx context.Context, instance *karov1alpha1.AgentInstance, existingPod *corev1.Pod) error {
+	logger := log.FromContext(ctx)
+	if instance.Status.Phase != karov1alpha1.AgentInstancePhaseIdle {
+		return nil
+	}
+	if instance.Spec.Hibernation.IdleAfter.Duration <= 0 || instance.Status.LastActiveAt == nil {
+		return nil
+	}
+
+	idleDuration := time.Since(instance.Status.LastActiveAt.Time)
+	if idleDuration > instance.Spec.Hibernation.IdleAfter.Duration {
+		if err := r.Delete(ctx, existingPod); err != nil && !errors.IsNotFound(err) {
+			logger.Error(err, "failed to delete pod for hibernation")
+			return err
+		}
+		instance.Status.Phase = karov1alpha1.AgentInstancePhaseHibernated
+		instance.Status.PodRef = nil
+		r.Recorder.Eventf(instance, corev1.EventTypeNormal, "Hibernated", "Agent hibernated after %s idle", instance.Spec.Hibernation.IdleAfter.Duration)
+	}
+	return nil
+}
+
 func (r *AgentInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
@@ -79,7 +184,7 @@ func (r *AgentInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			"Referenced AgentSpec %s not found", instance.Spec.AgentSpecRef.Name)
 		instance.Status.Phase = karov1alpha1.AgentInstancePhasePending
 		condition := metav1.Condition{
-			Type:               "Ready",
+			Type:               PhaseReady,
 			Status:             metav1.ConditionFalse,
 			ObservedGeneration: instance.Generation,
 			LastTransitionTime: metav1.Now(),
@@ -100,45 +205,8 @@ func (r *AgentInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// OnDemand startPolicy: do not create a pod until there are pending mailbox messages.
-	if agentSpec.Spec.Scaling.StartPolicy == karov1alpha1.StartPolicyOnDemand {
-		mailboxName := fmt.Sprintf("%s-mailbox", agentSpec.Name)
-		var mailbox karov1alpha1.AgentMailbox
-		mailboxKey := types.NamespacedName{Name: mailboxName, Namespace: instance.Namespace}
-		if err := r.Get(ctx, mailboxKey, &mailbox); err != nil {
-			// If mailbox not found, treat as no messages.
-			if instance.Status.Phase == "" || instance.Status.Phase == karov1alpha1.AgentInstancePhasePending {
-				instance.Status.Phase = karov1alpha1.AgentInstancePhaseHibernated
-				setCondition(&instance.Status.Conditions, metav1.Condition{
-					Type:               "Ready",
-					Status:             metav1.ConditionFalse,
-					ObservedGeneration: instance.Generation,
-					LastTransitionTime: metav1.Now(),
-					Reason:             "OnDemandNoMailbox",
-					Message:            "OnDemand: mailbox not found, hibernating",
-				})
-				if statusErr := r.Status().Update(ctx, &instance); statusErr != nil {
-					return ctrl.Result{}, statusErr
-				}
-				return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
-			}
-		} else if mailbox.Status.PendingCount == 0 {
-			// No pending messages — hibernate if not already running.
-			if instance.Status.Phase == "" || instance.Status.Phase == karov1alpha1.AgentInstancePhasePending {
-				instance.Status.Phase = karov1alpha1.AgentInstancePhaseHibernated
-				setCondition(&instance.Status.Conditions, metav1.Condition{
-					Type:               "Ready",
-					Status:             metav1.ConditionFalse,
-					ObservedGeneration: instance.Generation,
-					LastTransitionTime: metav1.Now(),
-					Reason:             "OnDemandNoMessages",
-					Message:            "OnDemand: no pending messages, hibernating",
-				})
-				if statusErr := r.Status().Update(ctx, &instance); statusErr != nil {
-					return ctrl.Result{}, statusErr
-				}
-				return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
-			}
-		}
+	if result, handled, err := r.handleOnDemandStart(ctx, &instance, &agentSpec); handled {
+		return result, err
 	}
 
 	// Build and ensure Pod exists
@@ -248,7 +316,7 @@ func (r *AgentInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		readyMessage = "Agent instance pod is running"
 	}
 	condition := metav1.Condition{
-		Type:               "Ready",
+		Type:               PhaseReady,
 		Status:             readyStatus,
 		ObservedGeneration: instance.Generation,
 		LastTransitionTime: metav1.Now(),
