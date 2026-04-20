@@ -76,7 +76,7 @@ Request-level gateway concerns (rate limits, budgets, provider failover, unified
 - **Scale-to-Zero** -- Agents hibernate when idle, wake on mailbox messages. No pods running when there's no work.
 - **MCP-First Runtime Contract** -- Every agent pod gets an `agent-runtime-mcp` sidecar exposing 8 tools (`poll_mailbox`, `ack_message`, `complete_task`, `fail_task`, `add_task`, `query_memory`, `store_memory`, `report_status`).
 - **Request-Level Gateway (delegated)** -- Set `gatewayRef` on a `ModelConfig`, `ToolSet`, or `AgentSpec` and KARO renders the native [agentgateway.dev](https://github.com/agentgateway/agentgateway) resources (`AgentgatewayBackend` + Gateway API `HTTPRoute`) so traffic flows through the gateway. Rate limits, budgets, provider failover, and unified metrics/tracing are enforced by agentgateway itself — KARO owns the declarative wiring.
-- **Agent Framework Agnostic** -- Reference harnesses for [Goose](https://github.com/block/goose) and Claude Code. Any agent that speaks MCP can plug in.
+- **Agent Framework Agnostic** -- Reference harnesses for [Goose](https://github.com/block/goose), Claude Code, Claw Code, and [OpenCode](https://github.com/sst/opencode). Any agent that speaks MCP can plug in.
 - **Policy & Governance** -- AgentPolicy controls model access, tool usage, loop limits, and data classification. EvalSuite gates ensure quality before tasks close.
 - **Human-in-the-Loop** -- AgentChannel integrates with Slack, Telegram, Discord, and Teams for approvals, overrides, and notifications.
 - **Observability** -- 60+ Prometheus metrics, VictoriaMetrics integration, 10 alerting rules, and a Grafana dashboard out of the box.
@@ -172,7 +172,9 @@ See [`config/samples/`](config/samples/) for complete examples of all 14 CRDs, i
 │   └── runtime/           # MCP server, tools, debug server
 ├── harness/
 │   ├── goose/             # Goose reference harness
-│   └── claude-code/       # Claude Code reference harness
+│   ├── claude-code/       # Claude Code reference harness
+│   ├── claw-code/         # Claw Code reference harness
+│   └── open-code/         # OpenCode reference harness
 ├── charts/karo/           # Helm chart
 ├── config/
 │   ├── crd/bases/         # Generated CRD manifests

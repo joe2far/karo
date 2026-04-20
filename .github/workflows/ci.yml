@@ -101,6 +101,9 @@ jobs:
           - name: karo-harness-claw-code
             dockerfile: harness/claw-code/Dockerfile
             context: harness/claw-code
+          - name: karo-harness-open-code
+            dockerfile: harness/open-code/Dockerfile
+            context: harness/open-code
     steps:
       - uses: actions/checkout@v4
 
