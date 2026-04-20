@@ -61,6 +61,9 @@ jobs:
           - name: karo-harness-claw-code
             dockerfile: harness/claw-code/Dockerfile
             context: harness/claw-code
+          - name: karo-harness-open-code
+            dockerfile: harness/open-code/Dockerfile
+            context: harness/open-code
     steps:
       - uses: actions/checkout@v4
 
@@ -227,6 +230,7 @@ jobs:
             - `karo-harness-claude-code:${{ needs.meta.outputs.version }}`
             - `karo-harness-goose:${{ needs.meta.outputs.version }}`
             - `karo-harness-claw-code:${{ needs.meta.outputs.version }}`
+            - `karo-harness-open-code:${{ needs.meta.outputs.version }}`
 
             ### Helm chart
             Pull from GHCR (OCI):

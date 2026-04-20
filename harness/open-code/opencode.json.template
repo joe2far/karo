@@ -1,0 +1,16 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "agent-runtime-mcp": {
+      "type": "local",
+      "command": ["/usr/local/bin/agent-runtime-mcp"],
+      "enabled": true,
+      "environment": {
+        "KARO_NAMESPACE": "${KARO_NAMESPACE}",
+        "KARO_AGENT_INSTANCE": "${KARO_AGENT_INSTANCE}",
+        "KARO_AGENT_SPEC": "${KARO_AGENT_SPEC}",
+        "KARO_MAILBOX": "${KARO_MAILBOX}"
+      }
+    }
+  }
+}
