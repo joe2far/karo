@@ -17,11 +17,27 @@ spec:
       appToken:
         name: karo-slack-app
         key: SLACK_APP_TOKEN
+      # Primary Slack channel — outbound notifications without an explicit
+      # thread context are posted here.
       channelId: "C04ABCDEF12"
+      # Additional channels the bot is allowed to read from and respond in.
+      # Inbound messages from any channel outside this list (plus channelId)
+      # are silently ignored — the bot stays scoped to the team's channels.
+      channelIds:
+        - "C05PLATFORM01"   # #platform-announcements
+        - "C06ALPHATEAM"    # #alpha-team
       socketMode: true
+      # Only respond to these specific Slack users. Anyone else can chat
+      # freely in the channel — the bot just ignores them.
       allowedUserIds:
         - "U01ALICE"
         - "U02BOB"
+      # Bot only acts on messages that @-mention it (or that are DMs sent
+      # by an allowed user, when allowDirectMessages is true). Prevents
+      # the bot from reacting to ambient channel chatter.
+      requireMention: true
+      allowDirectMessages: true
+      ignoreBots: true
       threadReplies: true
 
   # Inbound: what happens when a human sends a message

@@ -2282,10 +2282,20 @@ func (in *SlackConfig) DeepCopyInto(out *SlackConfig) {
 		*out = new(v1.SecretKeySelector)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.ChannelIDs != nil {
+		in, out := &in.ChannelIDs, &out.ChannelIDs
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	if in.AllowedUserIDs != nil {
 		in, out := &in.AllowedUserIDs, &out.AllowedUserIDs
 		*out = make([]string, len(*in))
 		copy(*out, *in)
+	}
+	if in.IgnoreBots != nil {
+		in, out := &in.IgnoreBots, &out.IgnoreBots
+		*out = new(bool)
+		**out = **in
 	}
 }
 

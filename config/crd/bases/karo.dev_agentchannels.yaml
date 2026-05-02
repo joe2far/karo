@@ -280,7 +280,18 @@ spec:
                     type: object
                   slack:
                     properties:
+                      allowDirectMessages:
+                        description: |-
+                          AllowDirectMessages, when true, lets allowed users address the bot in
+                          a Slack DM (im) channel without needing an @-mention. DMs are still
+                          subject to allowedUserIds. Defaults to false.
+                        type: boolean
                       allowedUserIds:
+                        description: |-
+                          AllowedUserIDs restricts which Slack user IDs the bot will respond to.
+                          If non-empty, inbound messages from any user not in this list are
+                          silently ignored. Leave empty to allow every user in the configured
+                          channels to interact with the bot.
                         items:
                           type: string
                         type: array
@@ -337,8 +348,34 @@ spec:
                         type: object
                         x-kubernetes-map-type: atomic
                       channelId:
+                        description: |-
+                          ChannelID is the primary Slack channel ID the bot is bound to.
+                          Outbound messages without an explicit thread context are posted here.
                         minLength: 1
                         type: string
+                      channelIds:
+                        description: |-
+                          ChannelIDs is an optional allowlist of additional Slack channel IDs
+                          the bot is allowed to read from and respond in. If non-empty, inbound
+                          messages from any channel not in this list (and not equal to channelId)
+                          are silently ignored. Leave empty to restrict the bot to channelId only.
+                        items:
+                          type: string
+                        type: array
+                      ignoreBots:
+                        default: true
+                        description: |-
+                          IgnoreBots, when true, drops inbound messages whose author is another
+                          Slack bot (including this bot's own messages). Defaults to true; set
+                          to false explicitly to allow bot-to-bot conversations.
+                        type: boolean
+                      requireMention:
+                        description: |-
+                          RequireMention, when true, makes the bot respond only to messages
+                          that explicitly @-mention the bot user (or invoke a configured slash
+                          command). Plain channel chatter is ignored. Direct messages bypass
+                          this requirement when allowDirectMessages is true.
+                        type: boolean
                       signingSecret:
                         description: SecretKeySelector selects a key of a Secret.
                         properties:
