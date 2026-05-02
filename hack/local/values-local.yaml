@@ -1,0 +1,67 @@
+# KARO Helm values tuned for local kind / k3d / minikube clusters.
+#
+# Key differences vs the default values.yaml:
+#   - Single replica (saves resources, leader-election still off-by-flag)
+#   - Lower CPU/memory requests so the operator schedules on a 4-core laptop
+#   - Image pull policy `IfNotPresent` so locally-loaded images are used
+#   - Observability scrapers disabled — assume no VictoriaMetrics/Prometheus
+#     operator is installed locally. Re-enable once you install one.
+#   - Webhook + cert-manager remain enabled because validating webhooks are
+#     part of the operator contract. Set `webhook.enabled=false` if you want
+#     to skip cert-manager for the very first run.
+#
+# Usage:
+#   helm upgrade --install karo charts/karo \
+#     --namespace karo-system --create-namespace \
+#     -f hack/local/values-local.yaml \
+#     --set image.tag=local
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/joe2far/karo-operator
+  tag: "local"
+  pullPolicy: IfNotPresent
+
+installCRDs: true
+
+webhook:
+  enabled: true
+  certManagerEnabled: true
+
+rbac:
+  create: true
+  serviceAccount:
+    create: true
+    name: karo-operator
+
+leaderElection:
+  enabled: false
+  namespace: karo-system
+
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: false
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+observability:
+  enabled: true
+  metrics:
+    port: 8080
+    path: /metrics
+  vmServiceScrape:
+    enabled: false
+  vmPodScrape:
+    enabled: false
+  vmRule:
+    enabled: false
+  grafanaDashboard:
+    enabled: false
