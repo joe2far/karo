@@ -195,6 +195,41 @@ helm-package: ## Package the Helm chart into dist/.
 helm-template: ## Render the Helm chart (includes CRDs).
 	helm template karo charts/karo --namespace karo-system --include-crds
 
+##@ Local Development (kind)
+
+# Local kind cluster targets. See docs/local-deployment-guide.md and hack/local/.
+# Override on the command line, e.g. `make local-up CLUSTER_NAME=karo-dev IMAGE_TAG=foo`.
+LOCAL_CLUSTER_NAME ?= karo-local
+LOCAL_IMAGE_TAG    ?= local
+
+.PHONY: local-up
+local-up: ## Create a kind cluster, build/load images, install KARO via Helm.
+	CLUSTER_NAME=$(LOCAL_CLUSTER_NAME) IMAGE_TAG=$(LOCAL_IMAGE_TAG) hack/local/up.sh
+
+.PHONY: local-down
+local-down: ## Delete the local kind cluster.
+	CLUSTER_NAME=$(LOCAL_CLUSTER_NAME) hack/local/down.sh
+
+.PHONY: local-uninstall
+local-uninstall: ## Uninstall the KARO Helm release from the local cluster (keep cluster).
+	CLUSTER_NAME=$(LOCAL_CLUSTER_NAME) UNINSTALL_ONLY=true hack/local/down.sh
+
+.PHONY: local-images
+local-images: ## Rebuild operator + harness images and load them into the kind cluster.
+	CLUSTER_NAME=$(LOCAL_CLUSTER_NAME) IMAGE_TAG=$(LOCAL_IMAGE_TAG) SKIP_BUILD=false hack/local/up.sh
+
+.PHONY: local-install
+local-install: ## Reinstall the KARO Helm release without rebuilding images.
+	CLUSTER_NAME=$(LOCAL_CLUSTER_NAME) IMAGE_TAG=$(LOCAL_IMAGE_TAG) SKIP_BUILD=true hack/local/up.sh
+
+.PHONY: local-dev-team
+local-dev-team: ## Apply the dev-team example to the local cluster.
+	IMAGE_TAG=$(LOCAL_IMAGE_TAG) hack/local/apply-dev-team.sh
+
+.PHONY: local-logs
+local-logs: ## Tail KARO operator logs in the local cluster.
+	kubectl logs -n karo-system -l app.kubernetes.io/name=karo-operator --tail=200 -f
+
 # PLATFORMS defines the target platforms for the manager image be built to provide support to multiple
 # architectures. (i.e. make docker-buildx IMG=myregistry/mypoperator:0.0.1). To use this option you need to:
 # - be able to use docker buildx. More info: https://docs.docker.com/build/buildx/

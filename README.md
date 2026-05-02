@@ -89,6 +89,20 @@ Request-level gateway concerns (rate limits, budgets, provider failover, unified
 - Helm 3
 - `kubectl` configured
 
+### Local development (kind on macOS / Linux)
+
+For iterating on `ModelConfig` / `AgentSpec` / `TaskGraph` locally before
+shipping to a real cluster:
+
+```bash
+make local-up           # creates a kind cluster, builds images, installs KARO
+make local-dev-team     # (optional) deploys the dev-team example
+make local-down         # tears it all down
+```
+
+See [`docs/local-deployment-guide.md`](docs/local-deployment-guide.md) for
+the full walkthrough, plus k3d and minikube alternatives.
+
 ### Install with Helm
 
 ```bash
