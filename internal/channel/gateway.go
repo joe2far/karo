@@ -16,6 +16,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -271,6 +272,37 @@ func (gm *GatewayManager) platformEnvVars(channel *karov1alpha1.AgentChannel) []
 			if p.Slack.ChannelID != "" {
 				envs = append(envs, corev1.EnvVar{Name: "SLACK_CHANNEL_ID", Value: p.Slack.ChannelID})
 			}
+			// Build the effective channel allowlist: the primary channelId
+			// plus any additional channelIds. The gateway uses this to drop
+			// inbound events that originate outside the allowlist.
+			allowedChannels := slackAllowedChannels(p.Slack)
+			if len(allowedChannels) > 0 {
+				envs = append(envs, corev1.EnvVar{
+					Name:  "SLACK_ALLOWED_CHANNEL_IDS",
+					Value: strings.Join(allowedChannels, ","),
+				})
+			}
+			if len(p.Slack.AllowedUserIDs) > 0 {
+				envs = append(envs, corev1.EnvVar{
+					Name:  "SLACK_ALLOWED_USER_IDS",
+					Value: strings.Join(p.Slack.AllowedUserIDs, ","),
+				})
+			}
+			if p.Slack.RequireMention {
+				envs = append(envs, corev1.EnvVar{Name: "SLACK_REQUIRE_MENTION", Value: "true"})
+			}
+			if p.Slack.AllowDirectMessages {
+				envs = append(envs, corev1.EnvVar{Name: "SLACK_ALLOW_DM", Value: "true"})
+			}
+			// IgnoreBots defaults to true when unset.
+			ignoreBots := true
+			if p.Slack.IgnoreBots != nil {
+				ignoreBots = *p.Slack.IgnoreBots
+			}
+			envs = append(envs, corev1.EnvVar{
+				Name:  "SLACK_IGNORE_BOTS",
+				Value: fmt.Sprintf("%t", ignoreBots),
+			})
 			if p.Slack.SocketMode && p.Slack.AppToken != nil {
 				envs = append(envs, envFromSecret("SLACK_APP_TOKEN", *p.Slack.AppToken))
 			}
@@ -343,3 +375,29 @@ func envFromSecret(envName string, sel corev1.SecretKeySelector) corev1.EnvVar {
 }
 
 func boolPtr(b bool) *bool { return &b }
+
+// slackAllowedChannels returns the deduplicated allowlist of Slack channel IDs
+// the bot may interact with: the primary channelId plus any additional
+// channelIds. Order is stable: primary first, additions in spec order.
+func slackAllowedChannels(s *karov1alpha1.SlackConfig) []string {
+	if s == nil {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(s.ChannelIDs)+1)
+	out := make([]string, 0, len(s.ChannelIDs)+1)
+	if s.ChannelID != "" {
+		seen[s.ChannelID] = struct{}{}
+		out = append(out, s.ChannelID)
+	}
+	for _, id := range s.ChannelIDs {
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
+}

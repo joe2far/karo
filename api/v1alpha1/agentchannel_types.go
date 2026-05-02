@@ -42,11 +42,36 @@ type SlackConfig struct {
 	AppCredentialSecret corev1.SecretKeySelector  `json:"appCredentialSecret"`
 	SigningSecret       corev1.SecretKeySelector  `json:"signingSecret"`
 	AppToken            *corev1.SecretKeySelector `json:"appToken,omitempty"`
+	// ChannelID is the primary Slack channel ID the bot is bound to.
+	// Outbound messages without an explicit thread context are posted here.
 	// +kubebuilder:validation:MinLength=1
-	ChannelID      string   `json:"channelId"`
-	SocketMode     bool     `json:"socketMode,omitempty"`
+	ChannelID string `json:"channelId"`
+	// ChannelIDs is an optional allowlist of additional Slack channel IDs
+	// the bot is allowed to read from and respond in. If non-empty, inbound
+	// messages from any channel not in this list (and not equal to channelId)
+	// are silently ignored. Leave empty to restrict the bot to channelId only.
+	ChannelIDs []string `json:"channelIds,omitempty"`
+	SocketMode bool     `json:"socketMode,omitempty"`
+	// AllowedUserIDs restricts which Slack user IDs the bot will respond to.
+	// If non-empty, inbound messages from any user not in this list are
+	// silently ignored. Leave empty to allow every user in the configured
+	// channels to interact with the bot.
 	AllowedUserIDs []string `json:"allowedUserIds,omitempty"`
-	ThreadReplies  bool     `json:"threadReplies,omitempty"`
+	// RequireMention, when true, makes the bot respond only to messages
+	// that explicitly @-mention the bot user (or invoke a configured slash
+	// command). Plain channel chatter is ignored. Direct messages bypass
+	// this requirement when allowDirectMessages is true.
+	RequireMention bool `json:"requireMention,omitempty"`
+	// AllowDirectMessages, when true, lets allowed users address the bot in
+	// a Slack DM (im) channel without needing an @-mention. DMs are still
+	// subject to allowedUserIds. Defaults to false.
+	AllowDirectMessages bool `json:"allowDirectMessages,omitempty"`
+	// IgnoreBots, when true, drops inbound messages whose author is another
+	// Slack bot (including this bot's own messages). Defaults to true; set
+	// to false explicitly to allow bot-to-bot conversations.
+	// +kubebuilder:default=true
+	IgnoreBots *bool `json:"ignoreBots,omitempty"`
+	ThreadReplies bool `json:"threadReplies,omitempty"`
 }
 
 type TelegramConfig struct {
