@@ -1,0 +1,13 @@
+# MCP servers shared across the pm-team (CLI §9).
+#
+# Agents reference a server by its `name` (see each AGENT.md `mcp:` list).
+# Secrets are pulled from the environment at run time via ${env:...} — never
+# hard-code tokens here, and never commit resolved values.
+servers:
+  - name: jira
+    transport: stdio
+    command: ["jira-mcp-server"]
+    env:
+      JIRA_URL: ${env:JIRA_URL}
+      JIRA_EMAIL: ${env:JIRA_EMAIL}
+      JIRA_API_TOKEN: ${env:JIRA_API_TOKEN}

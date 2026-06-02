@@ -143,7 +143,7 @@ def template_files(template: str, name: str) -> dict[str, str]:
             "agents/reviewer/AGENT.md": _agent_md("reviewer", "sdk", "claude-sonnet-4-6", _REVIEWER,
                                                   extra="interaction: { autonomy: autonomous }\npermissionMode: bypass"),
         }
-    else:  # lead-crew (default)
+    else:  # lead-team (default)
         agents = ["planner", "implementer", "reviewer"]
         files = {
             "karo.yaml": _karo_yaml(name, "lead-and-teammates", "planner", None, agents),

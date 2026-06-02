@@ -10,7 +10,7 @@ karo --help
 Common commands:
 
 ```bash
-karo init --name my-team --template lead-crew   # scaffold a §4.0 folder
+karo init --name my-team --template lead-team   # scaffold a §4.0 folder
 karo validate                                   # static checks, no network
 karo compile -o team.yaml                       # folder -> compiled AgentTeam
 karo run -o "ship the feature"                  # run locally

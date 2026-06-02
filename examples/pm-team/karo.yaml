@@ -1,0 +1,22 @@
+apiVersion: karo.dev/v1
+kind: AgentTeam
+metadata:
+  name: pm-team
+  labels: { domain: delivery }
+spec:
+  defaults:
+    harness: sdk
+    model: { provider: anthropic, id: claude-opus-4-8 }
+    workingDir: ./workspace
+  budgets:
+    team: { provider: anthropic, limit: 5000000, window: daily, onExceed: pause }
+  coordination:
+    pattern: lead-and-teammates
+    lead: pm-lead
+  # Team default: fully attachable, supervised (a human can attach and steer).
+  # Individual agents tighten or relax this below.
+  interaction: { attachable: true, autonomy: supervised }
+  agents:
+    - { ref: agents/pm-lead }
+    - { ref: agents/cr-reviewer }
+    - { ref: agents/deploy-approver }

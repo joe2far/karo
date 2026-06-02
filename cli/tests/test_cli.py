@@ -10,7 +10,7 @@ from karo.cli import app
 runner = CliRunner()
 
 
-def _init(tmp_path: Path, template: str = "lead-crew", name: str = "demo") -> None:
+def _init(tmp_path: Path, template: str = "lead-team", name: str = "demo") -> None:
     res = runner.invoke(app, ["-p", str(tmp_path), "init", "--name", name, "--template", template])
     assert res.exit_code == 0, res.output
 
@@ -54,7 +54,7 @@ def test_attach_inject_message(tmp_path: Path):
 def test_init_templates_have_no_org_identifiers(tmp_path: Path):
     """Templates must ship without org-specific identifiers (CLI §21, CI-checked)."""
     forbidden = ["joe2far", "joe2farrell", "@gmail", "anthropic.com/internal"]
-    for template in ("minimal", "lead-crew", "pipeline"):
+    for template in ("minimal", "lead-team", "pipeline"):
         d = tmp_path / template
         d.mkdir()
         runner.invoke(app, ["-p", str(d), "init", "--name", "t", "--template", template])

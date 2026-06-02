@@ -85,7 +85,7 @@ def _compile(team_file: Optional[Path] = None):
 @app.command()
 def init(
     name: str = typer.Option("my-team", "--name", help="Team name (DNS-1123)."),
-    template: str = typer.Option("lead-crew", "--template", help="minimal | lead-crew | pipeline."),
+    template: str = typer.Option("lead-team", "--template", help="minimal | lead-team | pipeline."),
     flat: bool = typer.Option(False, "--flat", help="Emit a single inline team.yaml instead of a folder."),
 ) -> None:
     """Scaffold a new project as the folder convention (§4.0)."""
@@ -96,8 +96,8 @@ def init(
         out.write_text(templates.flat_team_yaml(name), encoding="utf-8")
         _echo(f"wrote {out}")
         return
-    if template not in {"minimal", "lead-crew", "pipeline"}:
-        _fail(f"unknown template {template!r}; choose minimal | lead-crew | pipeline")
+    if template not in {"minimal", "lead-team", "pipeline"}:
+        _fail(f"unknown template {template!r}; choose minimal | lead-team | pipeline")
     files = templates.template_files(template, name)
     written = templates.write_files(root, files)
     _echo(f"scaffolded {template!r} team {name!r} in {root} ({len(written)} files)")
@@ -215,6 +215,7 @@ def run(
     objective: Optional[str] = typer.Option(None, "--objective", "-o", help="Objective text."),
     objective_file: Optional[Path] = typer.Option(None, "--objective-file", help="Read objective from a file."),
     team: Optional[Path] = typer.Option(None, "--team", help="A pre-compiled/flat team.yaml."),
+    agent: Optional[str] = typer.Option(None, "--agent", help="Dispatch the objective directly to a single agent (skip lead decomposition)."),
     resume: Optional[str] = typer.Option(None, "--resume", help="Resume a run-id."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Plan only, no model calls."),
     max_turns: Optional[int] = typer.Option(None, "--max-turns", help="Cap total turns."),
@@ -238,6 +239,11 @@ def run(
             _echo(f"{d.file}:{d.line}: error: [{d.code}] {d.message}", err=True)
         _fail("validation failed; fix errors before running")
 
+    if agent:
+        names = [a.name for a in result.team.spec.agents]
+        if agent not in names:
+            _fail(f"unknown agent {agent!r}; team has: {', '.join(names) or '(none)'}")
+
     project_dir = team.parent if team else state.project
     coord = Coordinator(
         result.team,
@@ -246,6 +252,7 @@ def run(
         dry_run=dry_run,
         autonomy_override=autonomy,
         max_turns=max_turns,
+        target_agent=agent,
         on_event=(None if state.json else _live_event),
     )
     res = asyncio.run(coord.run(objective or ""))

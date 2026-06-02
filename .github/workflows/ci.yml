@@ -49,7 +49,7 @@ jobs:
           import tempfile, pathlib, subprocess, sys
           from karo.templates import template_files
           forbidden = ["joe2farrell", "@gmail"]
-          for t in ("minimal", "lead-crew", "pipeline"):
+          for t in ("minimal", "lead-team", "pipeline"):
               for _, content in template_files(t, "t").items():
                   for tok in forbidden:
                       assert tok not in content.lower(), f"{tok} in {t}"

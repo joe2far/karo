@@ -306,6 +306,29 @@ spec:
     assert ("task.transition", "review") in seen  # the review state was entered
 
 
+async def test_direct_dispatch_drives_single_agent(tmp_path: Path):
+    """`target_agent` (the local `karo run --agent` path) creates ONE task owned by
+    the named agent and bypasses the lead decomposition."""
+    team = _flat(tmp_path, """\
+metadata: { name: t }
+spec:
+  defaults: { permissionMode: bypass }
+  coordination: { pattern: lead-and-teammates, lead: planner }
+  interaction: { autonomy: autonomous }
+  agents:
+    - { name: planner, harness: sdk }
+    - { name: implementer, harness: sdk }
+    - { name: deploy-approver, harness: sdk }
+""")
+    coord = Coordinator(team, project_dir=tmp_path, target_agent="deploy-approver")
+    res = await coord.run("Approve deploy for JIRA-789")
+    assert res.completed
+    # Exactly one task, owned by the targeted agent — no planner/implementer tasks.
+    assert len(res.tasks) == 1
+    assert res.tasks[0].owner == "deploy-approver"
+    assert res.tasks[0].state == "done"
+
+
 async def test_budget_hardstop_halts(tmp_path: Path):
     team = _flat(tmp_path, """\
 metadata: { name: t }

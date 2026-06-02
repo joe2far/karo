@@ -50,6 +50,7 @@ class Coordinator:
         autonomy_override: Optional[str] = None,
         max_turns: Optional[int] = None,
         agent: Optional[str] = None,
+        target_agent: Optional[str] = None,
         on_event=None,
     ):
         self.team = team
@@ -63,6 +64,11 @@ class Coordinator:
         # sharing one Postgres never duplicate the task graph. None = local
         # single-process: plans once and drives all agents.
         self.agent = agent
+        # Direct dispatch (the local "sling to one agent" path, CLI §7): when set,
+        # the objective becomes a *single* task owned by this agent, bypassing the
+        # coordination pattern's lead decomposition. Distinct from `agent` (which
+        # is cluster pod-scoping over an already-planned graph).
+        self.target_agent = target_agent
         self._agents = {a.name: a for a in team.spec.agents}
 
         karo = self.dir / ".karo"
@@ -101,6 +107,22 @@ class Coordinator:
         existing = await self.tasks.list()
         if existing:  # resume: keep persisted tasks
             return existing
+        # Direct dispatch: one task, owned by the targeted agent, no decomposition.
+        if self.target_agent:
+            direct = Task(
+                objective=objective,
+                owner=self.target_agent,
+                acceptance_criteria=[f"{self.target_agent} completes: {objective[:60]}"],
+            )
+            created_task = await self.tasks.create(direct)
+            self.events.emit(
+                EventType.task_transition.value,
+                agent=created_task.owner,
+                task_id=created_task.id,
+                from_state="(new)",
+                to_state=created_task.state,
+            )
+            return [created_task]
         created = []
         for task in plan_tasks(self.team, objective):
             created.append(await self.tasks.create(task))
@@ -189,8 +211,14 @@ class Coordinator:
         self._turns = 0
         halted = False
         halt_reason = ""
-        # A pod (agent set) claims only its own work; local drives all agents.
-        agents = [self.agent] if self.agent else [a.name for a in self.team.spec.agents]
+        # A pod (agent set) claims only its own work; a direct dispatch
+        # (target_agent) drives just that agent; otherwise local drives all agents.
+        if self.agent:
+            agents = [self.agent]
+        elif self.target_agent:
+            agents = [self.target_agent]
+        else:
+            agents = [a.name for a in self.team.spec.agents]
 
         while True:
             if self.max_turns is not None and self._turns >= self.max_turns:
