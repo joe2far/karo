@@ -114,7 +114,10 @@ def compile(
 ) -> None:
     """Compile the folder into the canonical AgentTeam (team.yaml form)."""
     result = _compile()
-    doc = result.team.model_dump(by_alias=True, exclude_none=True)
+    # mode="json" renders enums/paths as plain scalars so the YAML emitter (which
+    # only handles basic tags) can represent the doc. Without it, yaml.safe_dump
+    # raises RepresenterError on pydantic enum objects (e.g. <Backend.file>).
+    doc = result.team.model_dump(by_alias=True, exclude_none=True, mode="json")
     if format == "json":
         text = kr.canonical_json(doc)
     else:
