@@ -372,3 +372,22 @@ ok  	github.com/joe2far/karo/operator/internal/controller	(cached)
  M operator/config/crd/karo.dev_agentteams.yaml
 ?? operator/api/v1/schema_parity_test.go
 (empty above = generated code committed-in-sync)
+######## FINAL FULL-REPO GATE  Tue Jun  2 01:15:54 UTC 2026 ########
+== ruff ==
+All checks passed!
+OK
+== pytest karo-runtime ==
+.............................x.............s.s.s.s.s.s.s.s...........    [100%]
+60 passed, 8 skipped, 1 xfailed in 0.44s
+== pytest cli ==
+...........                                                              [100%]
+11 passed in 0.35s
+== schema drift ==
+PASS
+== go build/vet/test ==
+ok  	github.com/joe2far/karo/operator/api/v1	0.006s
+ok  	github.com/joe2far/karo/operator/internal/controller	(cached)
+== golangci-lint ==
+0 issues.
+== controller-gen drift vs committed ==
+PASS (in sync)
