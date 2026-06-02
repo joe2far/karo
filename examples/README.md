@@ -18,6 +18,9 @@ karo run --agent deploy-approver -o "Approve deploy for JIRA-789"
 
 For the concepts behind these (the run model, slinging to a single agent,
 guards and the human gate, secrets, export), see [`docs/USAGE.md`](../docs/USAGE.md).
+For a full developer journey — scaffold a dev team, sling a feature from a file,
+**open a PR**, share it, and graduate to Kubernetes with a git **service
+account** — see [`docs/DEV-WORKFLOW.md`](../docs/DEV-WORKFLOW.md).
 
 These examples carry **no org-specific identifiers** and are safe to copy as a
 starting point for your own teams.
