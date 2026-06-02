@@ -1,0 +1,374 @@
+###############################################
+# KARO M0 build/test log  Tue Jun  2 00:19:56 UTC 2026
+# python=Python 3.11.15  go=go version go1.24.7 linux/amd64
+###############################################
+
+==================== PIP INSTALL karo-runtime ====================
+Downloading pydantic_core-2.46.4-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (2.1 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2.1/2.1 MB 21.8 MB/s eta 0:00:00
+Downloading annotated_types-0.7.0-py3-none-any.whl (13 kB)
+Downloading typing_extensions-4.15.0-py3-none-any.whl (44 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 44.6/44.6 kB 4.4 MB/s eta 0:00:00
+Downloading typing_inspection-0.4.2-py3-none-any.whl (14 kB)
+Building wheels for collected packages: karo-runtime
+  Building editable for karo-runtime (pyproject.toml): started
+  Building editable for karo-runtime (pyproject.toml): finished with status 'done'
+  Created wheel for karo-runtime: filename=karo_runtime-0.1.0-0.editable-py3-none-any.whl size=3380 sha256=badbeafd2166f8ec40b2f3d40a2383be97dc4a391b75568bb5d9fd5ff7ffcf80
+  Stored in directory: /tmp/claude-0/pip-ephem-wheel-cache-95edwk66/wheels/ca/e9/7d/da4f3506e82e3697f58754ce15f1fc109971b4c9de34d18c17
+Successfully built karo-runtime
+Installing collected packages: typing-extensions, annotated-types, typing-inspection, pydantic-core, pydantic, karo-runtime
+Successfully installed annotated-types-0.7.0 karo-runtime-0.1.0 pydantic-2.13.4 pydantic-core-2.46.4 typing-extensions-4.15.0 typing-inspection-0.4.2
+WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv
+
+==================== PIP INSTALL cli ====================
+Downloading markdown_it_py-4.2.0-py3-none-any.whl (91 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 91.7/91.7 kB 12.6 MB/s eta 0:00:00
+Downloading pygments-2.20.0-py3-none-any.whl (1.2 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.2/1.2 MB 42.6 MB/s eta 0:00:00
+Downloading shellingham-1.5.4-py2.py3-none-any.whl (9.8 kB)
+Downloading mdurl-0.1.2-py3-none-any.whl (10.0 kB)
+Building wheels for collected packages: karo
+  Building editable for karo (pyproject.toml): started
+  Building editable for karo (pyproject.toml): finished with status 'done'
+  Created wheel for karo: filename=karo-0.1.0-0.editable-py3-none-any.whl size=3396 sha256=35f7559c13126ddfe262a2f3b637db7563f1d0f1a74bcf0ddae455ba5cfae810
+  Stored in directory: /tmp/claude-0/pip-ephem-wheel-cache-xwx_cuu2/wheels/9f/bb/36/ff40ce13069fb6771765a5b4d14732a9d832a1a2cf35e1ea0c
+Successfully built karo
+Installing collected packages: shellingham, pygments, mdurl, annotated-doc, markdown-it-py, rich, typer, karo
+Successfully installed annotated-doc-0.0.4 karo-0.1.0 markdown-it-py-4.2.0 mdurl-0.1.2 pygments-2.20.0 rich-15.0.0 shellingham-1.5.4 typer-0.26.5
+WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv
+
+==================== PYTEST karo-runtime ====================
+/usr/local/bin/python3: No module named pytest
+RUNTIME_PYTEST_EXIT=1
+
+==================== PYTEST cli ====================
+/usr/local/bin/python3: No module named pytest
+CLI_PYTEST_EXIT=1
+
+==================== RUFF (runtime+cli) ====================
+F401 [*] `typing.Optional` imported but unused
+  --> karo-runtime/karo_runtime/harness/base.py:11:40
+   |
+10 | from dataclasses import dataclass, field
+11 | from typing import Any, AsyncIterator, Optional, Protocol, runtime_checkable
+   |                                        ^^^^^^^^
+   |
+help: Remove unused import: `typing.Optional`
+
+F401 [*] `typing.Any` imported but unused
+  --> karo-runtime/karo_runtime/runtime/coordinator.py:17:20
+   |
+15 | from dataclasses import dataclass, field
+16 | from pathlib import Path
+17 | from typing import Any, Optional
+   |                    ^^^
+18 |
+19 | from ..harness import AgentContext, get_adapter
+   |
+help: Remove unused import: `typing.Any`
+
+F401 [*] `..stores.base.Message` imported but unused
+  --> karo-runtime/karo_runtime/runtime/coordinator.py:22:27
+   |
+20 | from ..harness.base import Message as HarnessMessage
+21 | from ..spec.models import AgentTeam, Autonomy, PauseOn
+22 | from ..stores.base import Message, Task, TaskState, TERMINAL_STATES
+   |                           ^^^^^^^
+23 | from ..stores.file import FileMailboxStore, FileMemoryStore, FileTaskStore
+24 | from .budget import FileBudgetMeter, OnExceed
+   |
+help: Remove unused import: `..stores.base.Message`
+
+F401 [*] `.events.digest` imported but unused
+  --> karo-runtime/karo_runtime/runtime/coordinator.py:25:42
+   |
+23 | from ..stores.file import FileMailboxStore, FileMemoryStore, FileTaskStore
+24 | from .budget import FileBudgetMeter, OnExceed
+25 | from .events import EventLog, EventType, digest
+   |                                          ^^^^^^
+26 | from .patterns import plan_tasks
+   |
+help: Remove unused import: `.events.digest`
+
+F401 [*] `yaml` imported but unused
+  --> karo-runtime/karo_runtime/spec/compile.py:25:8
+   |
+23 | from typing import Any
+24 |
+25 | import yaml
+   |        ^^^^
+26 |
+27 | from . import frontmatter
+   |
+help: Remove unused import: `yaml`
+
+F401 [*] `.loader.deep_merge` imported but unused
+  --> karo-runtime/karo_runtime/spec/compile.py:28:48
+   |
+27 | from . import frontmatter
+28 | from .loader import LoadError, apply_includes, deep_merge, load_yaml
+   |                                                ^^^^^^^^^^
+29 | from .models import AgentTeam
+   |
+help: Remove unused import: `.loader.deep_merge`
+
+F401 [*] `.canonicalize.materialized_spec` imported but unused
+  --> karo-runtime/karo_runtime/spec/validate.py:17:27
+   |
+15 | from typing import Any, Optional
+16 |
+17 | from .canonicalize import materialized_spec
+   |                           ^^^^^^^^^^^^^^^^^
+18 | from .compile import CompileResult
+19 | from .models import (
+   |
+help: Remove unused import: `.canonicalize.materialized_spec`
+
+F401 [*] `.base.TERMINAL_STATES` imported but unused
+  --> karo-runtime/karo_runtime/stores/file.py:25:5
+   |
+23 |     Task,
+24 |     TaskState,
+25 |     TERMINAL_STATES,
+   |     ^^^^^^^^^^^^^^^
+26 | )
+   |
+help: Remove unused import: `.base.TERMINAL_STATES`
+
+E741 Ambiguous variable name: `l`
+   --> karo-runtime/karo_runtime/stores/file.py:141:54
+    |
+139 |         if not box.exists():
+140 |             return []
+141 |         msgs = [Message.from_dict(json.loads(l)) for l in box.read_text("utf-8").splitlines() if l]
+    |                                                      ^
+142 |         return [m for m in msgs if not m.read] if unread_only else msgs
+    |
+
+E741 Ambiguous variable name: `l`
+   --> karo-runtime/karo_runtime/stores/file.py:149:58
+    |
+147 |             if not box.exists():
+148 |                 return
+149 |             msgs = [Message.from_dict(json.loads(l)) for l in box.read_text("utf-8").splitlines() if l]
+    |                                                          ^
+150 |             for m in msgs:
+151 |                 if m.id == msg_id:
+    |
+
+E741 Ambiguous variable name: `l`
+   --> karo-runtime/karo_runtime/stores/file.py:184:59
+    |
+182 |         if not log.exists():
+183 |             return []
+184 |         return [MemoryRecord.from_dict(json.loads(l)) for l in log.read_text("utf-8").splitlines() if l]
+    |                                                           ^
+185 |
+186 |     async def get(self, scope: str, key: str) -> Any:
+    |
+
+E741 Ambiguous variable name: `l`
+   --> karo-runtime/karo_runtime/stores/file.py:208:67
+    |
+206 |         with _flock(self._lock):
+207 |             for log in self.root.glob("*.jsonl"):
+208 |                 recs = [MemoryRecord.from_dict(json.loads(l)) for l in log.read_text("utf-8").splitlines() if l]
+    |                                                                   ^
+209 |                 if len(recs) <= max_items:
+210 |                     continue
+    |
+
+F401 [*] `pytest` imported but unused
+ --> karo-runtime/tests/test_coordinator.py:5:8
+  |
+3 | from pathlib import Path
+4 |
+5 | import pytest
+  |        ^^^^^^
+6 |
+7 | from karo_runtime.runtime import Coordinator
+  |
+help: Remove unused import: `pytest`
+
+F401 [*] `textwrap` imported but unused
+ --> karo-runtime/tests/test_export.py:3:8
+  |
+1 | """Export + round-trip parity (CLI §12, §19; v2 §15)."""
+2 |
+3 | import textwrap
+  |        ^^^^^^^^
+4 | from pathlib import Path
+  |
+help: Remove unused import: `textwrap`
+
+F401 [*] `os` imported but unused
+ --> karo-runtime/tests/test_stores.py:4:8
+  |
+3 | import asyncio
+4 | import os
+  |        ^^
+5 | from pathlib import Path
+  |
+help: Remove unused import: `os`
+
+F401 [*] `pytest` imported but unused
+ --> karo-runtime/tests/test_stores.py:7:8
+  |
+5 | from pathlib import Path
+6 |
+7 | import pytest
+  |        ^^^^^^
+8 |
+9 | from karo_runtime.stores.base import Message, Task, TaskState
+  |
+help: Remove unused import: `pytest`
+
+Found 16 errors.
+[*] 12 fixable with the `--fix` option.
+RUFF_EXIT=1
+
+==================== MYPY karo-runtime ====================
+karo-runtime/karo_runtime/spec/models.py:19: error: Cannot find implementation or library stub for module named "pydantic"  [import-not-found]
+karo-runtime/karo_runtime/spec/loader.py:14: error: Library stubs not installed for "yaml"  [import-untyped]
+karo-runtime/karo_runtime/spec/frontmatter.py:14: error: Library stubs not installed for "yaml"  [import-untyped]
+karo-runtime/karo_runtime/harness/sdk_adapter.py:26: error: Cannot find implementation or library stub for module named "claude_agent_sdk"  [import-not-found]
+karo-runtime/karo_runtime/harness/sdk_adapter.py:26: note: See https://mypy.readthedocs.io/en/stable/running_mypy.html#missing-imports
+karo-runtime/karo_runtime/spec/compile.py:25: error: Library stubs not installed for "yaml"  [import-untyped]
+karo-runtime/karo_runtime/spec/compile.py:25: note: Hint: "python3 -m pip install types-PyYAML"
+karo-runtime/karo_runtime/spec/compile.py:25: note: (or run "mypy --install-types" to install all missing stub packages)
+karo-runtime/karo_runtime/runtime/coordinator.py:82: error: Incompatible types in assignment (expression has type "Provider | str", variable has type "Provider")  [assignment]
+Found 6 errors in 6 files (checked 25 source files)
+MYPY_EXIT=0
+
+==================== PYTEST karo-runtime (retry) ====================
+...............................................                          [100%]
+47 passed in 0.51s
+RUNTIME_PYTEST_EXIT=0
+
+==================== PYTEST cli (retry) ====================
+.........                                                                [100%]
+9 passed in 0.37s
+CLI_PYTEST_EXIT=0
+
+==================== GO BUILD ./... ====================
+go: downloading k8s.io/apimachinery v0.29.0
+go: downloading sigs.k8s.io/controller-runtime v0.17.0
+go: downloading k8s.io/client-go v0.29.0
+go: downloading github.com/gogo/protobuf v1.3.2
+go: downloading k8s.io/klog/v2 v2.110.1
+go: downloading sigs.k8s.io/structured-merge-diff/v4 v4.4.1
+go: downloading github.com/google/gofuzz v1.2.0
+go: downloading github.com/evanphx/json-patch/v5 v5.8.0
+go: downloading github.com/go-logr/logr v1.4.1
+go: downloading github.com/go-logr/zapr v1.3.0
+go: downloading go.uber.org/zap v1.26.0
+go: downloading github.com/prometheus/client_golang v1.18.0
+go: downloading sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd
+go: downloading github.com/json-iterator/go v1.1.12
+go: downloading gopkg.in/yaml.v2 v2.4.0
+go: downloading gopkg.in/inf.v0 v0.9.1
+go: downloading k8s.io/utils v0.0.0-20230726121419-3b25d923346b
+go: downloading k8s.io/api v0.29.0
+go: downloading github.com/pkg/errors v0.9.1
+go: downloading k8s.io/kube-openapi v0.0.0-20231010175941-2dd684a91f00
+go: downloading go.uber.org/multierr v1.11.0
+go: downloading golang.org/x/net v0.19.0
+go: downloading github.com/fsnotify/fsnotify v1.7.0
+go: downloading github.com/prometheus/client_model v0.5.0
+go: downloading github.com/prometheus/common v0.45.0
+go: downloading gomodules.xyz/jsonpatch/v2 v2.4.0
+go: downloading k8s.io/apiextensions-apiserver v0.29.0
+go: downloading github.com/imdario/mergo v0.3.6
+go: downloading github.com/spf13/pflag v1.0.5
+go: downloading golang.org/x/term v0.15.0
+go: downloading k8s.io/component-base v0.29.0
+go: downloading github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd
+go: downloading github.com/modern-go/reflect2 v1.0.2
+go: downloading github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
+go: downloading golang.org/x/exp v0.0.0-20220722155223-a9213eeb770e
+go: downloading sigs.k8s.io/yaml v1.4.0
+go: downloading github.com/google/gnostic-models v0.6.8
+go: downloading gopkg.in/yaml.v3 v3.0.1
+go: downloading github.com/golang/protobuf v1.5.3
+go: downloading github.com/go-openapi/jsonreference v0.20.2
+go: downloading github.com/go-openapi/swag v0.22.3
+go: downloading golang.org/x/oauth2 v0.12.0
+go: downloading golang.org/x/time v0.3.0
+go: downloading github.com/beorn7/perks v1.0.1
+go: downloading github.com/cespare/xxhash/v2 v2.2.0
+go: downloading github.com/prometheus/procfs v0.12.0
+go: downloading google.golang.org/protobuf v1.31.0
+go: downloading golang.org/x/sys v0.16.0
+go: downloading github.com/google/go-cmp v0.6.0
+go: downloading github.com/matttproud/golang_protobuf_extensions/v2 v2.0.0
+go: downloading github.com/google/uuid v1.3.0
+go: downloading github.com/davecgh/go-spew v1.1.1
+go: downloading github.com/go-openapi/jsonpointer v0.19.6
+go: downloading github.com/mailru/easyjson v0.7.7
+go: downloading golang.org/x/text v0.14.0
+go: downloading github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822
+go: downloading github.com/josharian/intern v1.0.0
+go: downloading github.com/emicklei/go-restful/v3 v3.11.0
+GO_BUILD_EXIT=0
+
+==================== GO VET ./... ====================
+GO_VET_EXIT=0
+
+==================== GO TEST ./... ====================
+?   	github.com/joe2far/karo/operator/api/v1	[no test files]
+?   	github.com/joe2far/karo/operator/cmd	[no test files]
+ok  	github.com/joe2far/karo/operator/internal/controller	0.020s
+?   	github.com/joe2far/karo/operator/internal/dispatcher	[no test files]
+GO_TEST_EXIT=0
+
+==================== GOLANGCI-LINT ====================
+0 issues.
+GOLANGCI_EXIT=0
+
+==================== MANUAL SMOKE FINDINGS ====================
+[FINDING B1] CI "Schema drift check" step FAILS on a clean tree.
+  Command: diff <(tail -n +1 /tmp/schema.json) <(head -c -1 schema/agentteam.schema.json)
+  Committed file ends with "}\n"; generated ends with "}\n" (identical).
+  `head -c -1` strips the committed trailing newline, so diff reports a
+  spurious trailing-newline difference => non-zero exit => CI step red even
+  with zero drift. The one CI gate enforcing schema parity (python side) is broken.
+
+[FINDING B2] `karo compile` crashes in default (yaml) mode.
+  RepresenterError: ('cannot represent an object', <Backend.file: 'file'>)
+  cli.py:121 calls yaml.safe_dump(doc, ...) on a doc containing pydantic enum
+  objects. `karo compile --format json` works (uses kr.canonical_json). M0 command broken.
+
+[FINDING B3] JSON Schema contains NO if/then cross-field rules (only pydantic
+  anyOf for optionals). §4.3 conditional rules (lead-iff-pattern, pipeline.stages,
+  prompt+autonomous, budget math, guard matcher) live ONLY in Python validate.py.
+  The operator's CRD therefore does not enforce them => CLI-accepts/operator-accepts
+  divergence; the "shared schema expresses if/then" claim (validate.py:5, §4.3) is unmet.
+
+[FINDING B4] ruff: 16 findings (12 unused imports, 4 E741 ambiguous `l`). Not a CI gate (CI runs no linter).
+
+PASS SUMMARY: go build/vet/test PASS, golangci-lint 0 issues, pytest 47+9 PASS,
+  CLI init/validate/export PASS. FAIL: schema drift-check (B1), karo compile yaml (B2).
+######## M0 FIX VERIFICATION  Tue Jun  2 00:55:35 UTC 2026 ########
+== ruff ==
+All checks passed!
+== pytest karo-runtime ==
+......................................................                   [100%]
+54 passed in 0.34s
+== pytest cli ==
+..........                                                               [100%]
+10 passed in 0.32s
+== schema drift (new CI cmd) ==
+DRIFT PASS
+== go build/vet/test ==
+ok  	github.com/joe2far/karo/operator/api/v1	(cached)
+?   	github.com/joe2far/karo/operator/cmd	[no test files]
+ok  	github.com/joe2far/karo/operator/internal/controller	(cached)
+?   	github.com/joe2far/karo/operator/internal/dispatcher	[no test files]
+== golangci-lint ==
+0 issues.
+== controller-gen drift (CI: git diff after regen) ==
+ M operator/api/v1/agentteam_types.go
+ M operator/api/v1/zz_generated.deepcopy.go
+ M operator/config/crd/karo.dev_agentteams.yaml
+?? operator/api/v1/schema_parity_test.go
+(empty above = generated code committed-in-sync)
