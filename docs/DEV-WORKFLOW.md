@@ -276,7 +276,10 @@ kubectl apply -f dev-team.manifest.yaml      # requires the KARO v2 operator
 
 `karo export`'s `spec` body equals your local spec after canonicalization (a
 tested CI invariant), and `--strip-secrets` (the default) emits credential
-*references* only. Only the `sdk` harness is cluster-capable.
+*references* only. Only the `sdk` harness is cluster-capable. A complete
+ready-to-edit manifest for this exact dev-team (repos + git service account +
+open-pr) lives at
+[`operator/config/samples/karo_v1_devteam.yaml`](../operator/config/samples/karo_v1_devteam.yaml).
 
 Install the operator first, per [`README` → Deploy](../README.md#deploy-kubernetes):
 

@@ -1,0 +1,93 @@
+# A sample dev-team AgentTeam that does feature work on a git repo and opens a
+# pull request — the cluster form of docs/DEV-WORKFLOW.md.
+#
+# Prerequisites (the team carries references, never the secrets themselves):
+#   # backend DSN for the coordination stores (CLI §12 / v2 §4.1):
+#   kubectl -n dev-team create secret generic karo-pg \
+#     --from-literal=dsn='postgres://user:pass@karo-pg:5432/karo'
+#
+#   # git service account — the cluster equivalent of "auth is the runner's own
+#   # git config" (docs/DEV-WORKFLOW.md §5b). A bot PAT scoped to the team's repos
+#   # plus the commit identity the agent pushes as:
+#   kubectl -n dev-team create secret generic git-credentials \
+#     --from-literal=GITHUB_TOKEN=ghp_xxx \
+#     --from-literal=GIT_AUTHOR_NAME='dev-team-bot' \
+#     --from-literal=GIT_AUTHOR_EMAIL='dev-team-bot@your-org.com'
+#
+# Then apply:
+#   kubectl apply -f config/samples/karo_v1_devteam.yaml
+#   karo sling dev-team/implementer @feature-brief.md --context my-cluster
+apiVersion: karo.dev/v1
+kind: AgentTeam
+metadata:
+  name: dev-team
+  namespace: dev-team
+  labels:
+    domain: platform
+spec:
+  defaults:
+    harness: sdk
+    model: { provider: anthropic, id: claude-opus-4-8 }
+    permissionMode: acceptEdits
+  budgets:
+    team: { provider: anthropic, limit: 5000000, window: daily, onExceed: pause }
+  coordination:
+    pattern: lead-and-teammates
+    lead: planner
+  interaction:
+    attachable: true
+    autonomy: supervised
+  resources:
+    # The repo the team works on. On cluster the clone-repos init-container
+    # materializes this into the shared workspace, authenticating with the git
+    # service account below (docs/DEV-WORKFLOW.md §5b). Use an HTTPS remote — the
+    # token credential helper covers HTTPS, not SSH.
+    repos:
+      - name: app
+        url: https://github.com/your-org/app.git
+        ref: main
+    # The open-pr skill (committed in the team folder; see DEV-WORKFLOW.md §3a).
+    skills:
+      - source: skills/open-pr
+  agents:
+    - name: planner
+      harness: sdk
+      model: { provider: anthropic, id: claude-opus-4-8 }
+      instructions: |
+        You are the lead. Decompose the objective into tasks with acceptance
+        criteria, assign them, and coordinate. Do not write code yourself.
+    - name: implementer
+      harness: sdk
+      model: { provider: anthropic, id: claude-sonnet-4-6 }
+      # This agent works inside the `app` repo and opens a PR when done. With one
+      # repo its working dir is set to that repo; the open-pr skill's `git push`
+      # authenticates as the git service account.
+      repos: [app]
+      skills: [open-pr]
+      instructions: |
+        You implement the assigned feature inside the `app` repo to its
+        acceptance criteria, then run the open-pr skill to branch, commit, push,
+        and open a pull request for review. You never merge it yourself.
+    - name: reviewer
+      harness: sdk
+      model: { provider: bedrock, id: anthropic.claude-sonnet-4-6-v1:0 }
+      instructions: |
+        You review the opened pull request against the acceptance criteria and
+        return feedback. A human merges after approval.
+      interaction: { autonomy: autonomous }
+  runtime:
+    scaleToZero: true
+    idleTimeoutSeconds: 300
+    maxConcurrentAgents: 10
+    backends:                       # Postgres is the single default backend
+      memory: { kind: postgres, secretRef: { name: karo-pg } }
+      mailbox: { kind: postgres, secretRef: { name: karo-pg } }
+      tasks: { kind: postgres, secretRef: { name: karo-pg } }
+    # The git service account: the well-known `git` key names the Secret the
+    # operator wires into the clone init-container and the agent's `git push`.
+    # The credential never lands in this manifest — only the reference does.
+    secrets:
+      git: { name: git-credentials }
+    image:
+      agentRuntime: ghcr.io/karo/agent-runtime:v2
+      pullPolicy: IfNotPresent
