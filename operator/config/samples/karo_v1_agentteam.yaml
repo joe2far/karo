@@ -42,9 +42,9 @@ spec:
     scaleToZero: true
     idleTimeoutSeconds: 300
     maxConcurrentAgents: 10
-    backends:
-      memory: { kind: redis, secretRef: { name: karo-redis } }
-      mailbox: { kind: redis, secretRef: { name: karo-redis } }
+    backends:                       # Postgres is the single default backend
+      memory: { kind: postgres, secretRef: { name: karo-pg } }
+      mailbox: { kind: postgres, secretRef: { name: karo-pg } }
       tasks: { kind: postgres, secretRef: { name: karo-pg } }
     observability:
       metrics: victoriametrics

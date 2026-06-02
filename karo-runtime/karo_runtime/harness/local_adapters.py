@@ -41,8 +41,9 @@ class _ShellHarness:
         return None
 
     async def attach(self, ctx: AgentContext) -> AttachSession:
-        # Real impl drops into the tool's native TUI (PTY/pane) — local only.
-        return AttachSession(ctx)
+        # Local-only: the full impl drops into the tool's native TUI (PTY/pane,
+        # M3). The streamed inject/interrupt/detach verbs work in-process here.
+        return AttachSession(self, ctx)
 
 
 class ClaudeCodeAdapter(_ShellHarness):

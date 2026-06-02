@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -33,8 +34,13 @@ func (r *AgentTaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	// Default a blank task to pending and stamp the transition. The tasks backend
+	// is the source of truth; this projection only reflects state for kubectl/
+	// tooling visibility — no orchestration decisions are made here (v2 §3.2, §12).
 	if task.Status.State == "" {
+		now := metav1.Now()
 		task.Status.State = "pending"
+		task.Status.LastTransition = &now
 		if err := r.Status().Update(ctx, &task); err != nil {
 			return ctrl.Result{}, err
 		}

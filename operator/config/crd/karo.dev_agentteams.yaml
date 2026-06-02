@@ -56,6 +56,16 @@ spec:
                 items:
                   description: Agent is a single role within the team (CLI §4.2).
                   properties:
+                    budget:
+                      description: AgentBudget is an optional per-agent budget override
+                        (CLI §8).
+                      properties:
+                        limit:
+                          format: int64
+                          type: integer
+                        share:
+                          type: number
+                      type: object
                     harness:
                       type: string
                     instructions:
@@ -96,12 +106,27 @@ spec:
                       items:
                         type: string
                       type: array
+                    memory:
+                      description: AgentMemoryRef is a per-agent memory scope override
+                        (CLI §4.2).
+                      properties:
+                        scope:
+                          enum:
+                          - team
+                          - per-agent
+                          - both
+                          type: string
+                      type: object
                     model:
                       description: ModelBinding selects the LLM backend for an agent
                         (CLI §4.2).
                       properties:
                         id:
                           type: string
+                        params:
+                          description: Params are free-form generation params (max_tokens,
+                            temperature, ...).
+                          x-kubernetes-preserve-unknown-fields: true
                         profile:
                           description: Profile is a LOCAL credential selection mechanism;
                             ignored on cluster (§8).
@@ -114,6 +139,13 @@ spec:
                           type: string
                       type: object
                     name:
+                      type: string
+                    permissionMode:
+                      enum:
+                      - prompt
+                      - acceptEdits
+                      - plan
+                      - bypass
                       type: string
                     skills:
                       items:
@@ -159,6 +191,21 @@ spec:
                 properties:
                   lead:
                     type: string
+                  mailbox:
+                    description: MailboxConfig configures the durable mailbox (CLI
+                      §4.2 / §11).
+                    properties:
+                      backend:
+                        enum:
+                        - file
+                        - redis
+                        - none
+                        type: string
+                      hardLimit:
+                        type: integer
+                      path:
+                        type: string
+                    type: object
                   pattern:
                     enum:
                     - lead-and-teammates
@@ -174,7 +221,26 @@ spec:
                           type: string
                         type: array
                     type: object
+                  taskLayer:
+                    description: TaskLayer configures the durable task store (CLI
+                      §4.2 / §11).
+                    properties:
+                      backend:
+                        enum:
+                        - file
+                        - sqlite
+                        type: string
+                      path:
+                        type: string
+                      resumable:
+                        type: boolean
+                    type: object
                 type: object
+                x-kubernetes-validations:
+                - message: coordination.lead is required when pattern is 'lead-and-teammates'
+                  rule: '!(self.pattern == ''lead-and-teammates'') || has(self.lead)'
+                - message: coordination.pipeline is required when pattern is 'pipeline'
+                  rule: '!(self.pattern == ''pipeline'') || has(self.pipeline)'
               defaults:
                 description: Defaults are inherited by agents unless overridden (CLI
                   §4.2).
@@ -192,6 +258,10 @@ spec:
                     properties:
                       id:
                         type: string
+                      params:
+                        description: Params are free-form generation params (max_tokens,
+                          temperature, ...).
+                        x-kubernetes-preserve-unknown-fields: true
                       profile:
                         description: Profile is a LOCAL credential selection mechanism;
                           ignored on cluster (§8).
@@ -241,6 +311,104 @@ spec:
                     type: array
                   pauseTimeout:
                     type: integer
+                type: object
+              memory:
+                description: |-
+                  Memory configures durable state. backend selects the LOCAL store; on cluster
+                  runtime.backends.memory overrides it (CLI §10, v2 §6).
+                properties:
+                  backend:
+                    enum:
+                    - file
+                    - sqlite
+                    - redis
+                    - none
+                    type: string
+                  path:
+                    type: string
+                  retention:
+                    description: Retention is the memory GC policy (CLI §10).
+                    properties:
+                      gcStrategy:
+                        enum:
+                        - aggressive
+                        - lru
+                        - none
+                        type: string
+                      maxItems:
+                        type: integer
+                    type: object
+                  scope:
+                    enum:
+                    - team
+                    - per-agent
+                    - both
+                    type: string
+                type: object
+              resources:
+                description: Resources are the shared tools, skills and MCP servers
+                  (CLI §4.2 / §9).
+                properties:
+                  mcpServers:
+                    items:
+                      description: McpServer declares an MCP server resource (CLI
+                        §4.2 / §9).
+                      properties:
+                        command:
+                          items:
+                            type: string
+                          type: array
+                        env:
+                          additionalProperties:
+                            type: string
+                          type: object
+                        headers:
+                          additionalProperties:
+                            type: string
+                          type: object
+                        name:
+                          type: string
+                        transport:
+                          enum:
+                          - stdio
+                          - http
+                          type: string
+                        url:
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    type: array
+                  skills:
+                    items:
+                      description: SkillRef references a Claude Code-style skill dir
+                        or marketplace pack.
+                      properties:
+                        source:
+                          type: string
+                      required:
+                      - source
+                      type: object
+                    type: array
+                  tools:
+                    items:
+                      description: ToolDef declares a custom in-process tool (CLI
+                        §9).
+                      properties:
+                        description:
+                          type: string
+                        module:
+                          type: string
+                        name:
+                          type: string
+                        schema:
+                          description: Schema is a free-form JSON-schema-ish description
+                            of the tool input.
+                          x-kubernetes-preserve-unknown-fields: true
+                      required:
+                      - name
+                      type: object
+                    type: array
                 type: object
               runtime:
                 description: RuntimeSpec is the KARO v2 runtime block (v2 §3.1).

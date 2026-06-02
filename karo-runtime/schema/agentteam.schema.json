@@ -252,6 +252,36 @@
     },
     "Coordination": {
       "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "pattern": {
+                "const": "lead-and-teammates"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "lead"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "pattern": {
+                "const": "pipeline"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "pipeline"
+            ]
+          }
+        }
+      ],
       "properties": {
         "lead": {
           "anyOf": [

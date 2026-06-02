@@ -14,15 +14,15 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 from ..harness import AgentContext, get_adapter
 from ..harness.base import Message as HarnessMessage
 from ..spec.models import AgentTeam, Autonomy, PauseOn
-from ..stores.base import Message, Task, TaskState, TERMINAL_STATES
+from ..stores.base import Task, TaskState, TERMINAL_STATES
 from ..stores.file import FileMailboxStore, FileMemoryStore, FileTaskStore
 from .budget import FileBudgetMeter, OnExceed
-from .events import EventLog, EventType, digest
+from .events import EventLog, EventType
 from .patterns import plan_tasks
 
 
@@ -49,6 +49,7 @@ class Coordinator:
         dry_run: bool = False,
         autonomy_override: Optional[str] = None,
         max_turns: Optional[int] = None,
+        agent: Optional[str] = None,
         on_event=None,
     ):
         self.team = team
@@ -57,6 +58,11 @@ class Coordinator:
         self.dry_run = dry_run
         self.autonomy_override = autonomy_override
         self.max_turns = max_turns
+        # When set, this Coordinator drives ONE agent (a cluster pod): it claims
+        # only that agent's tasks, and only the lead agent's pod plans — so N pods
+        # sharing one Postgres never duplicate the task graph. None = local
+        # single-process: plans once and drives all agents.
+        self.agent = agent
         self._agents = {a.name: a for a in team.spec.agents}
 
         karo = self.dir / ".karo"
@@ -136,6 +142,10 @@ class Coordinator:
             skills=agent.skills,
             working_dir=defaults.working_dir,
             permission_mode=(agent.permission_mode or defaults.permission_mode),
+            # Accessors the adapter/attach session use (CLI §6.2).
+            memory=self.memory,
+            mailbox=self.mail,
+            budget=self.budget,
         )
 
     def _harness_for(self, agent_name: str) -> str:
@@ -156,72 +166,106 @@ class Coordinator:
 
     # -- run -------------------------------------------------------------- #
     async def run(self, objective: str) -> RunResult:
-        tasks = await self.plan(objective)
+        """Drive the team to terminal state via atomic claim + mailbox handoff.
+
+        Each iteration atomically claims the next runnable task (deterministic
+        agent order); on cluster every agent pod runs this *same* loop scoped to
+        its own agent, so file (local) and Postgres (cluster) produce an identical
+        task graph — the parity invariant (CLI §11, v2 §6).
+        """
+        lead = self.team.spec.coordination.lead
+        planner_agent = lead or (self.team.spec.agents[0].name if self.team.spec.agents else None)
+
+        # Leader-elected planning: a cluster pod only plans if it is the lead
+        # (planner); all other pods just claim. Local (agent=None) always plans.
+        if self.agent is None or self.agent == planner_agent:
+            tasks = await self.plan(objective)
+        else:
+            tasks = await self.tasks.list()
         if self.dry_run:
             return RunResult(self.run_id, tasks)
 
         paused: list[str] = []
-        turns = 0
+        self._turns = 0
         halted = False
         halt_reason = ""
+        # A pod (agent set) claims only its own work; local drives all agents.
+        agents = [self.agent] if self.agent else [a.name for a in self.team.spec.agents]
 
-        # Drive until no claimable work remains.
         while True:
-            task = await self._next_runnable()
-            if task is None:
-                break
-            if self.max_turns is not None and turns >= self.max_turns:
+            if self.max_turns is not None and self._turns >= self.max_turns:
                 halted, halt_reason = True, "max-turns"
                 break
 
-            owner = task.owner or await self._assign_swarm(task)
+            # Atomic claim — the swarm/parallel-pull safety guarantee. Owned
+            # tasks are claimed by their agent; unowned ones first-available.
+            task = None
+            for agent in agents:
+                task = await self.tasks.claim(owner=agent, agent=agent)
+                if task is not None:
+                    break
+            if task is None:
+                break
+
+            owner = task.owner
             ctx = self._context(owner)
 
+            # Guard: pauseBefore (supervised only) — pause before acting, await
+            # human attach. Released by `karo attach --continue` (§13).
+            pb = self._pause_before(owner)
+            if pb and not task.guard_released and self._autonomy(owner) != Autonomy.autonomous.value:
+                task.pause_reason = "guard:pauseBefore"
+                await self._transition(task, TaskState.paused.value)
+                paused.append(owner)
+                self.events.emit(EventType.guard_pause.value, agent=owner,
+                                 guard=f"pauseBefore:{','.join(pb)}",
+                                 reason=f"pauseBefore:{','.join(pb)}")
+                continue
+
             # Authoritative budget gate before the turn (§8).
-            est = max(1, len(ctx.instructions + task.objective) // 4)
-            decision = self.budget.can_spend(self.budget_provider, est, owner)
-            if not decision.allowed:
-                self.events.emit(
-                    EventType.budget_halt.value, agent=owner,
-                    provider=self.budget_provider, mode=decision.mode,
-                    used=decision.used, limit=decision.limit,
-                )
+            ok, decision = self._budget_gate(owner, ctx.instructions + task.objective)
+            if not ok:
                 if decision.mode == OnExceed.hardstop.value:
                     halted, halt_reason = True, "budget-hardstop"
                     break
                 if decision.mode == OnExceed.pause.value:
+                    task.pause_reason = "budget"
                     await self._transition(task, TaskState.paused.value)
                     paused.append(owner)
                     self.events.emit(EventType.guard_pause.value, agent=owner,
                                      guard="budget", reason="budget")
                     continue
-                # warn: fall through and continue.
+                # warn: fall through.
+
+            # Mailbox handoff: the task is assigned to its owner.
+            await self._send_mail(to=owner, sender=(lead or "coordinator"),
+                                  body=f"assigned: {task.objective}")
 
             await self._transition(task, TaskState.in_progress.value)
-            self.events.emit(EventType.turn_start.value, agent=owner,
-                             turn_id=f"t{turns}", task_id=task.id)
-
-            adapter = get_adapter(self._harness_for(owner), dry_run=self.dry_run)
-            result = await adapter.run_turn(ctx, HarnessMessage("user", task.objective))
-            turns += 1
-
-            self.budget.record(self.budget_provider, owner,
-                               result.prompt_tokens, result.completion_tokens, result.estimated)
-            self.events.emit(EventType.model_usage.value, agent=owner,
-                             provider=self.budget_provider,
-                             prompt_tokens=result.prompt_tokens,
-                             completion_tokens=result.completion_tokens,
-                             estimated=result.estimated)
-            self.events.emit(EventType.turn_end.value, agent=owner,
-                             turn_id=f"t{turns - 1}", status="ok",
-                             tokens=result.completion_tokens)
-
+            result = await self._turn(owner, ctx, task.objective)
             task.result = {"text": result.text}
             task.attempts += 1
             await self.memory.put("team", f"task:{task.id}", result.text, tags=[owner])
 
+            # Report back to the lead (teammate → lead handoff).
+            if lead and owner != lead:
+                await self._send_mail(to=lead, sender=owner,
+                                      body=f"{owner} completed: {result.text[:80]}")
+
+            # Review state: a reviewer agent reviews the work before done (M2).
+            if task.reviewer and task.reviewer != owner:
+                await self._transition(task, TaskState.review.value)
+                rctx = self._context(task.reviewer)
+                review = await self._turn(task.reviewer, rctx,
+                                          f"Review against acceptance criteria: {result.text[:120]}")
+                await self.memory.put("team", f"review:{task.id}", review.text,
+                                      tags=[task.reviewer])
+                await self._send_mail(to=(lead or task.reviewer), sender=task.reviewer,
+                                      body=f"reviewed {task.id}")
+
             # Guard: pauseOn taskComplete (supervised only).
             if self._should_pause_on(owner, PauseOn.task_complete.value):
+                task.pause_reason = "guard:pauseOn"
                 await self._transition(task, TaskState.paused.value)
                 paused.append(owner)
                 self.events.emit(EventType.guard_pause.value, agent=owner,
@@ -237,6 +281,80 @@ class Coordinator:
             paused_agents=sorted(set(paused)),
         )
 
+    # -- run helpers ------------------------------------------------------ #
+    def _budget_gate(self, owner: str, text: str):
+        """Authoritative check-and-reserve before a turn (§8). Returns (ok, decision)."""
+        est = max(1, len(text) // 4)
+        decision = self.budget.can_spend(self.budget_provider, est, owner)
+        if not decision.allowed:
+            self.events.emit(EventType.budget_halt.value, agent=owner,
+                             provider=self.budget_provider, mode=decision.mode,
+                             used=decision.used, limit=decision.limit)
+            return False, decision
+        return True, decision
+
+    async def _turn(self, owner: str, ctx: AgentContext, message_text: str):
+        """Run one agent turn through its harness adapter, metering + eventing."""
+        self.events.emit(EventType.turn_start.value, agent=owner, turn_id=f"t{self._turns}")
+        adapter = get_adapter(self._harness_for(owner), dry_run=self.dry_run)
+        result = await adapter.run_turn(ctx, HarnessMessage("user", message_text))
+        self._turns += 1
+        self.budget.record(self.budget_provider, owner,
+                           result.prompt_tokens, result.completion_tokens, result.estimated)
+        self.events.emit(EventType.model_usage.value, agent=owner,
+                         provider=self.budget_provider,
+                         prompt_tokens=result.prompt_tokens,
+                         completion_tokens=result.completion_tokens,
+                         estimated=result.estimated)
+        self.events.emit(EventType.turn_end.value, agent=owner,
+                         turn_id=f"t{self._turns - 1}", status="ok",
+                         tokens=result.completion_tokens)
+        return result
+
+    async def _send_mail(self, to: str, sender: str, body: str):
+        """Deliver a mailbox message and emit the canonical event (§15)."""
+        from ..stores.base import Message as MailMessage
+
+        msg = await self.mail.send(MailMessage(to=to, body=body, sender=sender))
+        self.events.emit(EventType.mailbox_send.value, agent=sender,
+                         **{"from": sender, "to": to, "msg_id": msg.id})
+        return msg
+
+    def _pause_before(self, agent_name: str) -> list[str]:
+        """Tool names that should pause the agent before invocation (§13)."""
+        tools: list[str] = []
+        for g in self._guards(agent_name):
+            if g.pause_before:
+                tools.extend(g.pause_before)
+        return tools
+
+    # -- attach & direct (§13) ------------------------------------------- #
+    async def open_attach(self, agent_name: str):
+        """Open a live attach session to an agent (stream+inject+interrupt+detach)."""
+        ctx = self._context(agent_name)
+        adapter = get_adapter(self._harness_for(agent_name), dry_run=self.dry_run)
+        self.events.emit(EventType.attach.value, agent=agent_name, user="local")
+        return await adapter.attach(ctx)
+
+    async def release_paused(self, agent: Optional[str] = None) -> list[str]:
+        """Release guard-paused tasks back to pending so the next run continues.
+
+        Used by `karo attach ... --continue`. Marks ``guard_released`` so the
+        pauseBefore guard does not re-trip (persisted for cross-process resume).
+        """
+        released: list[str] = []
+        for t in await self.tasks.list(state=TaskState.paused.value):
+            if agent and t.owner != agent:
+                continue
+            # A guard pause is cleared by the human attaching; a budget pause is
+            # simply re-gated on the next run (do not fake a guard release).
+            if (t.pause_reason or "").startswith("guard"):
+                t.guard_released = True
+            t.pause_reason = None
+            await self._transition(t, TaskState.pending.value)
+            released.append(t.id)
+        return released
+
     def _should_pause_on(self, agent: str, event: str) -> bool:
         if self._autonomy(agent) == Autonomy.autonomous.value:
             return False
@@ -244,19 +362,3 @@ class Coordinator:
             if g.pause_on == event:
                 return True
         return False
-
-    async def _next_runnable(self) -> Optional[Task]:
-        tasks = sorted(await self.tasks.list(), key=lambda t: t.created)
-        done = {t.id for t in tasks if t.state == TaskState.done.value}
-        for t in tasks:
-            if t.state in {TaskState.pending.value, TaskState.assigned.value}:
-                if all(dep in done for dep in t.depends_on):
-                    return t
-        return None
-
-    async def _assign_swarm(self, task: Task) -> str:
-        # Fallback owner for unowned (swarm) tasks: first agent.
-        owner = self.team.spec.agents[0].name
-        task.owner = owner
-        await self.tasks.update(task)
-        return owner

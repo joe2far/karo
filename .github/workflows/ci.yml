@@ -9,6 +9,22 @@ jobs:
   python:
     name: karo-runtime + cli (python)
     runs-on: ubuntu-latest
+    # Postgres is the default cluster backend; running it here exercises the
+    # Postgres store contract AND Parity Checkpoint A (file == Postgres) in CI,
+    # not just the file backend.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: karo
+          POSTGRES_PASSWORD: karo
+          POSTGRES_DB: karo
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U karo" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    env:
+      KARO_TEST_PG_DSN: postgresql://karo:karo@127.0.0.1:5432/karo
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -16,17 +32,17 @@ jobs:
           python-version: "3.12"
       - name: Install
         run: |
-          pip install -e karo-runtime -e cli
+          pip install -e "karo-runtime[postgres]" -e cli
           pip install pytest pytest-asyncio
-      - name: Test karo-runtime
+      - name: Test karo-runtime (incl. Postgres store contract + Parity Checkpoint A)
         run: cd karo-runtime && pytest -q
       - name: Test cli
         run: cd cli && pytest -q
       - name: Schema drift check (generated == committed)
         run: |
           python -c "import json,karo_runtime as kr; print(json.dumps(kr.json_schema(),indent=2,sort_keys=True))" > /tmp/schema.json
-          diff <(tail -n +1 /tmp/schema.json) <(head -c -1 karo-runtime/schema/agentteam.schema.json) \
-            || (echo '::error::JSON Schema drift — run the schema generator and commit'; exit 1)
+          diff -u karo-runtime/schema/agentteam.schema.json /tmp/schema.json \
+            || (echo '::error::JSON Schema drift — run scripts/gen_schema.py and commit'; exit 1)
       - name: Templates have no org identifiers
         run: |
           cd cli && python - <<'PY'
@@ -60,7 +76,7 @@ jobs:
           go run sigs.k8s.io/controller-tools/cmd/controller-gen@v0.14.0 \
             object:headerFile=/dev/null paths=./api/...
           go run sigs.k8s.io/controller-tools/cmd/controller-gen@v0.14.0 \
-            crd rbac:roleName=karo-manager-role paths=./... \
+            crd:allowDangerousTypes=true rbac:roleName=karo-manager-role paths=./... \
             output:crd:dir=./config/crd output:rbac:dir=./config/rbac
           git diff --exit-code -- api/ config/ \
             || (echo '::error::generated code/CRDs out of date — run make generate manifests'; exit 1)

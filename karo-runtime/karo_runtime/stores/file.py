@@ -22,7 +22,6 @@ from .base import (
     Message,
     Task,
     TaskState,
-    TERMINAL_STATES,
 )
 
 
@@ -84,7 +83,9 @@ class FileTaskStore:
         _atomic_write(self._task_path(task.id), json.dumps(task.to_dict()))
         return task
 
-    async def claim(self, owner: str, lease_ttl: float = 60.0) -> Optional[Task]:
+    async def claim(
+        self, owner: str, lease_ttl: float = 60.0, agent: Optional[str] = None
+    ) -> Optional[Task]:
         with _flock(self._lock):
             tasks = sorted(self._read_all(), key=lambda t: t.created)
             done_ids = {t.id for t in tasks if t.state == TaskState.done.value}
@@ -98,6 +99,9 @@ class FileTaskStore:
                     and t.lease < now
                 )
                 if not (claimable or stale):
+                    continue
+                # Agent-scoped claim: only this agent's tasks (or unowned).
+                if agent is not None and t.owner not in (None, agent):
                     continue
                 if not all(dep in done_ids for dep in t.depends_on):
                     continue
@@ -138,7 +142,7 @@ class FileMailboxStore:
         box = self._box(agent)
         if not box.exists():
             return []
-        msgs = [Message.from_dict(json.loads(l)) for l in box.read_text("utf-8").splitlines() if l]
+        msgs = [Message.from_dict(json.loads(ln)) for ln in box.read_text("utf-8").splitlines() if ln]
         return [m for m in msgs if not m.read] if unread_only else msgs
 
     async def mark_read(self, agent: str, msg_id: str) -> None:
@@ -146,7 +150,7 @@ class FileMailboxStore:
             box = self._box(agent)
             if not box.exists():
                 return
-            msgs = [Message.from_dict(json.loads(l)) for l in box.read_text("utf-8").splitlines() if l]
+            msgs = [Message.from_dict(json.loads(ln)) for ln in box.read_text("utf-8").splitlines() if ln]
             for m in msgs:
                 if m.id == msg_id:
                     m.read = True
@@ -181,7 +185,7 @@ class FileMemoryStore:
         log = self._log(scope)
         if not log.exists():
             return []
-        return [MemoryRecord.from_dict(json.loads(l)) for l in log.read_text("utf-8").splitlines() if l]
+        return [MemoryRecord.from_dict(json.loads(ln)) for ln in log.read_text("utf-8").splitlines() if ln]
 
     async def get(self, scope: str, key: str) -> Any:
         latest = None
@@ -205,7 +209,7 @@ class FileMemoryStore:
             return
         with _flock(self._lock):
             for log in self.root.glob("*.jsonl"):
-                recs = [MemoryRecord.from_dict(json.loads(l)) for l in log.read_text("utf-8").splitlines() if l]
+                recs = [MemoryRecord.from_dict(json.loads(ln)) for ln in log.read_text("utf-8").splitlines() if ln]
                 if len(recs) <= max_items:
                     continue
                 # aggressive / lru: keep the most-recent maxItems.

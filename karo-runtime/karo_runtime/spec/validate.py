@@ -14,7 +14,6 @@ import re
 from dataclasses import asdict, dataclass
 from typing import Any, Optional
 
-from .canonicalize import materialized_spec
 from .compile import CompileResult
 from .models import (
     AgentTeam,

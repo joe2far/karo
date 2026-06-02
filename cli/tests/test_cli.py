@@ -31,6 +31,26 @@ def test_init_validate_lead_crew(tmp_path: Path):
     assert "ok" in res.output
 
 
+def test_compile_yaml_and_json(tmp_path: Path):
+    """`karo compile` must work in both formats (F5: yaml mode crashed on enums)."""
+    _init(tmp_path)
+    res = runner.invoke(app, ["-p", str(tmp_path), "compile"])  # default yaml
+    assert res.exit_code == 0, res.output
+    assert "apiVersion: karo.dev/v1" in res.output
+    assert "kind: AgentTeam" in res.output
+    res = runner.invoke(app, ["-p", str(tmp_path), "compile", "--format", "json"])
+    assert res.exit_code == 0, res.output
+    assert '"apiVersion":"karo.dev/v1"' in res.output
+
+
+def test_attach_inject_message(tmp_path: Path):
+    """`karo attach -m` injects a user turn and prints the agent reply (§13)."""
+    _init(tmp_path)
+    res = runner.invoke(app, ["-p", str(tmp_path), "attach", "planner", "-m", "do the API first"])
+    assert res.exit_code == 0, res.output
+    assert "planner" in res.output
+
+
 def test_init_templates_have_no_org_identifiers(tmp_path: Path):
     """Templates must ship without org-specific identifiers (CLI §21, CI-checked)."""
     forbidden = ["joe2far", "joe2farrell", "@gmail", "anthropic.com/internal"]

@@ -1,0 +1,34 @@
+# Deterministic parity fixture (Parity Checkpoint A — CLI §19, v2 §15).
+# A fixed lead-and-teammates team with a large integer budget and a block-scalar
+# instruction, run with the deterministic stub harness (no model calls), so the
+# task graph + outputs are byte-stable and comparable across local (file stores)
+# and cluster (redis/postgres) execution.
+apiVersion: karo.dev/v1
+kind: AgentTeam
+metadata:
+  name: parity-crew
+  labels: { domain: platform }
+spec:
+  defaults:
+    harness: sdk
+    model: { provider: anthropic, id: claude-opus-4-8 }
+    permissionMode: bypass
+  budgets:
+    team: { provider: anthropic, limit: 5000000, window: session, onExceed: warn }
+  coordination:
+    pattern: pipeline
+    pipeline: { stages: [planner, implementer, reviewer] }
+  interaction: { autonomy: autonomous }
+  agents:
+    - name: planner
+      harness: sdk
+      instructions: |
+        Decompose the objective into ordered tasks with acceptance criteria.
+    - name: implementer
+      harness: sdk
+      instructions: |
+        Implement each assigned task to its acceptance criteria.
+    - name: reviewer
+      harness: sdk
+      instructions: |
+        Review completed work against acceptance criteria.

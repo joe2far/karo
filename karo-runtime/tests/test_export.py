@@ -1,6 +1,5 @@
 """Export + round-trip parity (CLI §12, §19; v2 §15)."""
 
-import textwrap
 from pathlib import Path
 
 import pytest

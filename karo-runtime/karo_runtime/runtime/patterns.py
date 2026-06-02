@@ -43,14 +43,35 @@ def plan_tasks(team: AgentTeam, objective: str) -> list[Task]:
             for _ in agents
         ]
 
-    # lead-and-teammates (default): one task per teammate, owned by them.
-    lead = team.spec.coordination.lead
-    teammates = [a for a in agents if a != lead] or agents
-    return [
-        Task(
+    # lead-and-teammates (default): the lead decomposes the objective into one
+    # task per implementer teammate; if a `reviewer` agent exists, each task is
+    # reviewed (the `review` state) before done; finally the lead synthesizes,
+    # depending on every teammate task. Deterministic so parity holds offline.
+    lead = team.spec.coordination.lead or agents[0]
+    reviewer = next((a for a in agents if a == "reviewer" and a != lead), None)
+    implementers = [a for a in agents if a not in {lead, reviewer}] or [
+        a for a in agents if a != lead
+    ] or agents
+
+    tasks: list[Task] = []
+    impl_ids: list[str] = []
+    for mate in implementers:
+        t = Task(
             objective=objective,
             owner=mate,
+            reviewer=reviewer,
             acceptance_criteria=[f"{mate} contribution to: {objective[:60]}"],
         )
-        for mate in teammates
-    ]
+        tasks.append(t)
+        impl_ids.append(t.id)
+
+    # Lead synthesis task, gated on every teammate task (the lead's report).
+    tasks.append(
+        Task(
+            objective=f"Synthesize teammate results for: {objective}",
+            owner=lead,
+            depends_on=impl_ids,
+            acceptance_criteria=["lead synthesizes teammate contributions"],
+        )
+    )
+    return tasks

@@ -114,7 +114,10 @@ def compile(
 ) -> None:
     """Compile the folder into the canonical AgentTeam (team.yaml form)."""
     result = _compile()
-    doc = result.team.model_dump(by_alias=True, exclude_none=True)
+    # mode="json" renders enums/paths as plain scalars so the YAML emitter (which
+    # only handles basic tags) can represent the doc. Without it, yaml.safe_dump
+    # raises RepresenterError on pydantic enum objects (e.g. <Backend.file>).
+    doc = result.team.model_dump(by_alias=True, exclude_none=True, mode="json")
     if format == "json":
         text = kr.canonical_json(doc)
     else:
@@ -483,16 +486,50 @@ def budget_reset() -> None:
 def attach(
     agent: str,
     run: Optional[str] = typer.Option(None, "--run", help="Run id."),
+    message: Optional[str] = typer.Option(None, "--message", "-m", help="Inject a direction (user turn)."),
+    interrupt: bool = typer.Option(False, "--interrupt", help="Interrupt the current turn."),
+    continue_: bool = typer.Option(False, "--continue", help="Release a guard-paused agent and hand back to the Coordinator."),
     context: Optional[str] = typer.Option(None, "--context", help="Cluster context (KARO v2 remote)."),
 ) -> None:
-    """Attach to a running agent and direct it (§13)."""
+    """Attach to a running agent and direct it — stream + inject + interrupt + detach (§13)."""
     if context:
         _echo(f"[remote] would open a streamed attach session to {agent} on context {context!r}")
-        _echo("remote attach requires a reachable KARO v2 cluster (v2 §7).")
+        _echo("remote attach targets a KARO v2 cluster (v2 §7); same verbs, streamed transport.")
         return
-    _echo(f"attach to {agent} (run={run or 'latest'}):")
-    _echo("  the live streamed session lands in M1+; for now inspect via `karo ps`,")
-    _echo("  steer via `karo mail send` and resume via `karo tasks retry`.")
+
+    result = _compile()
+    coord = Coordinator(result.team, project_dir=state.project, run_id=run)
+
+    async def _drive():
+        session = await coord.open_attach(agent)
+        if interrupt:
+            await session.interrupt()
+            _echo(f"interrupted {agent}'s current turn")
+        if message:
+            turn = await session.inject(message)
+            _echo(f"[{agent}] {turn.text}")
+        # Replay the live transcript (watch the stream).
+        async for ev in session.stream():
+            d = ev.data
+            if ev.type == "human.inject":
+                _echo(f"  > you: {d.get('body','')}")
+            elif ev.type == "turn.delta":
+                _echo(f"  < {agent}: {d.get('text','')}")
+        released: list[str] = []
+        if continue_:
+            released = await coord.release_paused(agent)
+        session.detach()
+        coord.events.emit("detach", agent=agent, user="local")
+        return released
+
+    released = asyncio.run(_drive())
+    if continue_:
+        if released:
+            _echo(f"released {len(released)} paused task(s) for {agent}; re-run `karo run --resume {coord.run_id}` to continue")
+        else:
+            _echo(f"no guard-paused tasks for {agent}")
+    if not (message or interrupt or continue_):
+        _echo(f"attached to {agent}; use -m to inject direction, --interrupt, or --continue. (:detach)")
 
 
 # --------------------------------------------------------------------------- #

@@ -109,4 +109,7 @@ class SdkAdapter:
         return None
 
     async def attach(self, ctx: AgentContext) -> AttachSession:
-        return AttachSession(ctx)
+        # Streamed in-process session (inject/interrupt/detach over this adapter).
+        # On cluster the operator exposes the same verbs over a websocket to the
+        # agent pod; the session object and semantics are identical (v2 §7).
+        return AttachSession(self, ctx)
