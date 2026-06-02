@@ -48,7 +48,12 @@ def plan_tasks(team: AgentTeam, objective: str) -> list[Task]:
     # reviewed (the `review` state) before done; finally the lead synthesizes,
     # depending on every teammate task. Deterministic so parity holds offline.
     lead = team.spec.coordination.lead or agents[0]
-    reviewer = next((a for a in agents if a == "reviewer" and a != lead), None)
+    # Explicit reviewer wins; otherwise fall back to the "reviewer"-named agent.
+    declared_reviewer = team.spec.coordination.reviewer
+    if declared_reviewer and declared_reviewer in agents and declared_reviewer != lead:
+        reviewer = declared_reviewer
+    else:
+        reviewer = next((a for a in agents if a == "reviewer" and a != lead), None)
     implementers = [a for a in agents if a not in {lead, reviewer}] or [
         a for a in agents if a != lead
     ] or agents

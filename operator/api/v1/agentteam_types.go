@@ -57,11 +57,21 @@ type ToolDef struct {
 	Schema *runtime.RawExtension `json:"schema,omitempty"`
 }
 
-// Resources are the shared tools, skills and MCP servers (CLI §4.2 / §9).
+// Repo is a git repository an agent works on (CLI §9). Cloned by the agent
+// pod's init-container from this spec; agents reference it by name.
+type Repo struct {
+	Name string `json:"name"`
+	URL  string `json:"url"`
+	Ref  string `json:"ref,omitempty"`
+	Path string `json:"path,omitempty"`
+}
+
+// Resources are the shared tools, skills, MCP servers and repos (CLI §4.2 / §9).
 type Resources struct {
 	McpServers []McpServer `json:"mcpServers,omitempty"`
 	Skills     []SkillRef  `json:"skills,omitempty"`
 	Tools      []ToolDef   `json:"tools,omitempty"`
+	Repos      []Repo      `json:"repos,omitempty"`
 }
 
 // Retention is the memory GC policy (CLI §10).
@@ -149,6 +159,7 @@ type Coordination struct {
 	// +kubebuilder:validation:Enum=lead-and-teammates;pipeline;swarm
 	Pattern   string         `json:"pattern,omitempty"`
 	Lead      string         `json:"lead,omitempty"`
+	Reviewer  string         `json:"reviewer,omitempty"`
 	Pipeline  *Pipeline      `json:"pipeline,omitempty"`
 	Mailbox   *MailboxConfig `json:"mailbox,omitempty"`
 	TaskLayer *TaskLayer     `json:"taskLayer,omitempty"`
@@ -182,6 +193,7 @@ type Agent struct {
 	Tools          []string        `json:"tools,omitempty"`
 	MCP            []string        `json:"mcp,omitempty"`
 	Skills         []string        `json:"skills,omitempty"`
+	Repos          []string        `json:"repos,omitempty"`
 	Mailbox        string          `json:"mailbox,omitempty"`
 	Memory         *AgentMemoryRef `json:"memory,omitempty"`
 	Budget         *AgentBudget    `json:"budget,omitempty"`

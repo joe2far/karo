@@ -268,11 +268,25 @@ def _cluster_sling(*, context: str, namespace: str, agent: str, objective: str, 
     _echo(f"watch:  kubectl --context {context} -n {namespace} get agenttasks -w")
 
 
+def _read_prompt_file(p: Path) -> str:
+    if not p.is_file():
+        _fail(f"prompt file not found: {p}")
+    return p.read_text("utf-8")
+
+
+def _expand_at_file(val: Optional[str]) -> Optional[str]:
+    """`@path` reads the prompt from a file (the prompt varies per task)."""
+    if val and val.startswith("@"):
+        return _read_prompt_file(Path(val[1:]))
+    return val
+
+
 def _run_impl(
     *,
     target: Optional[str],
     message: Optional[str],
     objective: Optional[str],
+    file: Optional[Path],
     objective_file: Optional[Path],
     team: Optional[Path],
     agent: Optional[str],
@@ -281,9 +295,16 @@ def _run_impl(
     max_turns: Optional[int],
     autonomy: Optional[str],
     context: Optional[str],
+    no_repos: bool = False,
 ) -> None:
-    if objective_file:
-        objective = objective_file.read_text("utf-8")
+    # Prompt-from-file: --file/-f, the back-compat --objective-file, or an @path
+    # in the positional message. The prompt "varies per task", so file input is
+    # first-class on both `run` and `sling`.
+    if file:
+        objective = _read_prompt_file(file)
+    elif objective_file:
+        objective = _read_prompt_file(objective_file)
+    message = _expand_at_file(message)
     if autonomy and autonomy not in {"supervised", "autonomous"}:
         _fail("--autonomy must be supervised or autonomous")
 
@@ -343,6 +364,21 @@ def _run_impl(
             _fail(f"unknown agent {agent!r}; team has: {', '.join(names) or '(none)'}")
 
     run_dir = team.parent if team else project_dir
+
+    # Materialize the agents' git repos into the workspace (local lane). The
+    # operator does the same on cluster via init-containers from the same spec.
+    if not dry_run and not no_repos and result.team.spec.resources.repos:
+        from karo_runtime.runtime.repos import ensure_repos
+
+        only = {agent} if agent else None
+        try:
+            ensure_repos(
+                result.team, run_dir, only_agents=only,
+                on_event=(None if state.json else lambda n, act, p: _echo(f"repo {act}: {n} -> {p}")),
+            )
+        except Exception as e:
+            _fail(f"repo setup failed: {e}")
+
     coord = Coordinator(
         result.team,
         project_dir=run_dir,
@@ -379,8 +415,9 @@ def _run_impl(
 def run(
     target: Optional[str] = typer.Argument(None, help="[team/]agent to target (team = folder locally, namespace with --context). Omit to run the whole team."),
     message: Optional[str] = typer.Argument(None, help="Objective/prompt as a positional (alternative to -o)."),
-    objective: Optional[str] = typer.Option(None, "--objective", "-o", help="Objective text."),
-    objective_file: Optional[Path] = typer.Option(None, "--objective-file", help="Read objective from a file."),
+    objective: Optional[str] = typer.Option(None, "--objective", "-o", help="Prompt/objective text."),
+    file: Optional[Path] = typer.Option(None, "--file", "-f", help="Read the prompt from a file (also: a `@path` positional message)."),
+    objective_file: Optional[Path] = typer.Option(None, "--objective-file", help="Deprecated alias for --file."),
     team: Optional[Path] = typer.Option(None, "--team", help="A pre-compiled/flat team.yaml."),
     agent: Optional[str] = typer.Option(None, "--agent", help="Dispatch directly to a single agent (skip lead decomposition)."),
     context: Optional[str] = typer.Option(None, "--context", help="Target a KARO v2 cluster (team = namespace); creates an AgentTask via kubectl."),
@@ -388,6 +425,7 @@ def run(
     dry_run: bool = typer.Option(False, "--dry-run", help="Plan only, no model calls."),
     max_turns: Optional[int] = typer.Option(None, "--max-turns", help="Cap total turns."),
     autonomy: Optional[str] = typer.Option(None, "--autonomy", help="supervised | autonomous (override)."),
+    no_repos: bool = typer.Option(False, "--no-repos", help="Skip cloning/updating the agents' git repos."),
 ) -> None:
     """Compile → validate → run a team locally, or sling at `[team/]agent` (§7).
 
@@ -397,10 +435,11 @@ def run(
       karo run reviewer "review the auth changes"    # one agent in this project
       karo run pm-team/deploy-approver "approve X"   # one agent in team folder pm-team/
       karo run pm-team/deploy-approver "approve X" --context my-cluster  # on a cluster
+      karo run deploy-approver @release-notes.md                         # prompt from a file
     """
-    _run_impl(target=target, message=message, objective=objective, objective_file=objective_file,
+    _run_impl(target=target, message=message, objective=objective, file=file, objective_file=objective_file,
               team=team, agent=agent, resume=resume, dry_run=dry_run, max_turns=max_turns,
-              autonomy=autonomy, context=context)
+              autonomy=autonomy, context=context, no_repos=no_repos)
 
 
 @app.command()
@@ -416,9 +455,10 @@ def sling(
 
     Sugar over `karo run <target> <message>`: the target is required, so there's no
     ambiguity. Locally `team` resolves to a folder; with `--context` it is the
-    cluster namespace and an AgentTask is created.
+    cluster namespace and an AgentTask is created. The message may be `@path` to
+    read the prompt from a file.
     """
-    _run_impl(target=target, message=message, objective=None, objective_file=None,
+    _run_impl(target=target, message=message, objective=None, file=None, objective_file=None,
               team=None, agent=None, resume=None, dry_run=dry_run, max_turns=max_turns,
               autonomy=autonomy, context=context)
 

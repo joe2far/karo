@@ -89,6 +89,28 @@ karo run -o "Review and approve the JIRA-789 auth-service v2.3 release"
 # - task-… [pending] owner=pm-lead
 ```
 
+## 4b. Pointing an agent at a git repo
+
+`cr-reviewer` reviews code, so it makes sense to give it a repo to work in. Add a
+repo to `karo.yaml` and reference it from the agent:
+
+```yaml
+# karo.yaml
+spec:
+  resources:
+    repos:
+      - { name: api, url: https://github.com/acme/api.git, ref: main }
+```
+```yaml
+# agents/cr-reviewer/AGENT.md frontmatter
+repos: [api]
+```
+
+Now `karo sling cr-reviewer "review PR #42"` clones `api` into
+`./workspace/api` and runs the agent **inside** it. Cloning uses your own git
+auth (so private repos work without sharing tokens); add `--no-repos` to skip if
+you've already checked it out. See [`docs/USAGE.md` §3e](../../docs/USAGE.md).
+
 ## 5. Go live (real model + real Jira)
 
 Stub mode is for learning the workflow. To run for real:

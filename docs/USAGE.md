@@ -148,6 +148,12 @@ servers, skills, guards, and autonomy all still apply.
 | `karo run agent "msg"` | one agent in the current project |
 | `karo run team/agent "msg"` | one agent in the team folder `team/` (see §3c) |
 | `karo run -o "objective"` | whole team (explicit flag, back-compat) |
+| `karo run agent @prompt.md` | prompt read from a file (`@path`) — the prompt varies per task |
+| `karo run agent -f prompt.md` | same, via the `-f/--file` flag (`--objective-file` is the old alias) |
+
+The prompt/objective can always come from a **file** — handy when it's a long
+task brief, a generated spec, or a templated request that changes per run:
+`karo sling deploy-approver @release-checklist.md`.
 
 `karo sling` is the same thing with the target **required**, so there's never any
 ambiguity — use it when you specifically mean "fire at one agent."
@@ -204,6 +210,51 @@ the KARO v2 operator installed and the team deployed to that namespace (via
 so a fully idle team may leave the task `pending` until a pod claims it.
 
 ---
+
+### 3e. Agents that work on a git repo (or several)
+
+Most agents do their work *in a codebase*. Declare the repos once under
+`resources.repos`, then point each agent at the one(s) it works on with a
+`repos:` list in its `AGENT.md` frontmatter:
+
+```yaml
+# karo.yaml
+spec:
+  resources:
+    repos:
+      - name: api          # git branch/tag/SHA via `ref:`, path via `path:`
+        url: https://github.com/acme/api.git
+        ref: main
+      - name: web
+        url: git@github.com:acme/web.git
+```
+
+```yaml
+# agents/backend-dev/AGENT.md (frontmatter)
+---
+name: backend-dev
+harness: sdk
+repos: [api]          # this agent works on the `api` repo
+---
+```
+
+On `karo run`, KARO clones/updates each referenced repo into the workspace
+(`./workspace/<name>` by default) and sets the agent's **working directory** to
+its repo — an agent with exactly one repo runs *inside* it; an agent with several
+runs in the workspace root that holds them all. Use `--no-repos` to skip cloning
+(e.g. when you've already checked them out).
+
+- **Multiple repos, multiple agents:** list as many as you need; each agent picks
+  the subset it owns. Two agents can share a repo or work on different ones.
+- **Auth stays yours:** cloning uses *your* git config (ssh keys, credential
+  helper, or a token in the URL via `${env:GITHUB_TOKEN}`). The team definition
+  carries **no** credentials — a colleague clones the same team and authenticates
+  as themselves (§9).
+- **On cluster:** the agent pod's init-container clones the same repos from the
+  same spec, so "which repo this agent works on" is portable, not per-machine.
+
+> **Validation:** `karo validate` flags an agent that references a repo you didn't
+> declare (`unknown-repo`), just like unknown tools/skills/MCP servers.
 
 ## 4. Steering a run: attach, guards, and the human gate
 
@@ -378,6 +429,9 @@ travels with it:
   `ANTHROPIC_API_KEY` (their own Claude) and their own `JIRA_API_TOKEN`, and the
   identical spec runs for them. `karo export --strip-secrets` (the default) emits
   references only — nothing sensitive lands in a manifest either.
+- **Git repos clone as the runner.** `resources.repos` declares *which* repos
+  agents work on (§3e), but cloning uses each person's own git auth — so a private
+  repo works for whoever has access, with no shared tokens in the team.
 
 So the sharing flow is just:
 

@@ -93,6 +93,7 @@ refactor-crew/
   skills/              # Claude Code-style skill dirs, reused verbatim
   tools/               # custom in-process @tool functions (auto-discovered)
   mcp/servers.yaml     # MCP server declarations
+  # karo.yaml also declares resources.repos (git repos agents work on, cloned on run)
   shared/              # reusable fragments pulled in via include:
   .karo/               # local runtime state (memory/tasks/mail) — gitignored
 ```
@@ -159,6 +160,7 @@ docker build -f agent-runtime-image/Dockerfile -t ghcr.io/karo/agent-runtime:v2 
 - **Harness** — the execution front-end (`sdk`, `claude-code`, `cursor`, `codex`). Only `sdk` is cluster-capable; the others are local-only (portability matrix, CLI §4.7).
 - **Coordination patterns** — `lead-and-teammates`, `pipeline`, `swarm`, all on the same Coordinator primitives (durable tasks + mailbox + memory + attach/guards).
 - **Attach & direct** — every agent is a live, steerable session, not an approval queue. `karo attach` to watch, inject a turn, interrupt, or take over. **Guards** pause-and-flag an agent for attention; they are not approvals.
+- **Working repos** — agents declare the git repos they work on (`resources.repos` + per-agent `repos:`); KARO clones them into the workspace on run and sets each agent's working dir. Auth is the runner's own git config, so the team carries no credentials.
 - **Budgets** — authoritative, synchronous token accounting (atomic counter), identical locally and on cluster.
 - **Parity** — `karo export`'s spec body equals the local spec after canonicalization; this is tested against a fixture with a large integer and a block-scalar to catch YAML-portability drift.
 
@@ -184,29 +186,33 @@ carry no org-specific identifiers.
 
 ### Status & what's outstanding
 
-Done and tested: **M0** (shared foundation — schema, models, loader,
-canonicalizer, validator, stores), **M1** (single-agent SDK run, file stores,
-budget meter, attach/`pauseBefore` guard), and **M2** (Coordinator: durable
+Done and tested: **M0** (shared foundation), **M1** (single-agent SDK run, file
+stores, budget meter, attach/`pauseBefore` guard), **M2** (Coordinator: durable
 tasks + mailbox + lead-and-teammates, atomic claim, resume, `karo tasks/mail/
-memory`, direct dispatch via `karo run --agent`). **Parity Checkpoint A passes**
-in CI across file *and* real Postgres.
+memory`), and a working slice of **M3/M4**: direct dispatch + `karo sling
+[team/]agent "msg"` (local folders *and* cluster namespaces via `--context`),
+per-provider budgets, the provider-agnostic model router, **git working repos**
+(`resources.repos` + per-agent `repos:`, cloned into the workspace on run),
+prompt-from-file (`-f`/`@file`), and an explicit `coordination.reviewer` field.
+**Parity Checkpoint A passes** in CI across file *and* real Postgres; the operator
+builds/vets/tests green (envtest) with the same spec.
 
 Outstanding for a complete solution:
 
-- **M3 — multi-harness + multi-provider:** Cursor/Codex adapters, Bedrock/Vertex
-  providers, per-agent overrides, cross-provider budgets; **model-driven**
-  decomposition (today's lead decomposition is deterministic — one task per
-  teammate); **mailbox-driven** coordination (inboxes are recorded, not yet
-  consumed to drive dialogue); a `coordination.reviewer` field (replacing the
-  `name == "reviewer"` convention).
-- **Operator (cluster) M3:** on-demand **scale-from-zero** (provision the lead
-  pod on objective arrival, wake teammates when claimable work exists) and a
-  long-lived pod **claim loop** (today a pod runs `run()` once and exits). This
-  is what makes `karo sling … --context` (which creates the `AgentTask`) actually
-  *run* on an idle team rather than leaving it `pending`.
-- **M4 — export + polish:** `karo export` round-trip hardening, pipeline/swarm
-  ergonomics, remote `karo attach --context` streaming against a live cluster,
-  and published **pipx/PyPI packaging**.
+- **M3 — runtime depth:** real Bedrock/Vertex API integration in the SDK adapter
+  (router + budgets already provider-agnostic); **model-driven** decomposition
+  (today's lead decomposition is deterministic — one task per teammate);
+  **mailbox-driven** coordination (inboxes are recorded, not yet consumed to
+  drive dialogue); full PTY attach for the local-only Cursor/Codex harnesses.
+- **Operator (cluster) M3 — the big one:** on-demand **scale-from-zero**
+  (provision the lead pod on objective arrival, wake teammates when claimable work
+  exists) and a long-lived pod **claim loop** (today a pod runs `run()` once and
+  exits). This is what makes `karo sling … --context` (which creates the
+  `AgentTask`) actually *run* on an idle team rather than leaving it `pending`.
+- **M4 — polish:** `karo export` round-trip hardening, remote `karo attach
+  --context` *streaming* against a live cluster, OTel/metrics + gVisor + EKS/GKE
+  validation, and **published pipx/PyPI packaging** (install is no-build today,
+  but not yet on a public index).
 
 See the milestone tables in `docs/PRD-KARO-CLI.md` §18 and `docs/PRD-KARO-v2.md`
 §14, and the adversarial M2 review in [`review/07-m2-verdict.md`](review/07-m2-verdict.md).

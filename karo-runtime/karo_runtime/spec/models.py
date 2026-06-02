@@ -179,10 +179,27 @@ class ToolDef(_Base):
     schema_: dict[str, Any] = Field(default_factory=dict, alias="schema")
 
 
+class Repo(_Base):
+    """A git repository an agent works on (§9).
+
+    Declared once under ``resources.repos`` and referenced by name from an
+    agent's ``repos:`` list. Locally the CLI clones/checks it out into the
+    workspace before a run; on cluster the agent pod's init-container does the
+    same from the same spec. ``ref`` is a branch, tag, or commit SHA (default:
+    the remote's default branch). ``path`` overrides the checkout location
+    (default ``<workingDir>/<name>``).
+    """
+    name: str
+    url: str
+    ref: Optional[str] = None
+    path: Optional[str] = None
+
+
 class Resources(_Base):
     mcp_servers: list[McpServer] = Field(default_factory=list, alias="mcpServers")
     skills: list[SkillRef] = Field(default_factory=list)
     tools: list[ToolDef] = Field(default_factory=list)
+    repos: list[Repo] = Field(default_factory=list)
 
 
 # --------------------------------------------------------------------------- #
@@ -222,6 +239,7 @@ class TaskLayer(_Base):
 class Coordination(_Base):
     pattern: Pattern = Pattern.lead_and_teammates
     lead: Optional[str] = None
+    reviewer: Optional[str] = None  # explicit reviewer agent (else the "reviewer"-named one)
     pipeline: Optional[Pipeline] = None
     mailbox: MailboxConfig = Field(default_factory=MailboxConfig)
     task_layer: TaskLayer = Field(default_factory=TaskLayer, alias="taskLayer")
@@ -275,6 +293,7 @@ class Agent(_Base):
     tools: list[str] = Field(default_factory=list)
     mcp: list[str] = Field(default_factory=list)
     skills: list[str] = Field(default_factory=list)
+    repos: list[str] = Field(default_factory=list)
     memory: Optional[AgentMemoryRef] = None
     mailbox: Optional[str] = None  # address; defaults to agent name
     interaction: Optional[Interaction] = None

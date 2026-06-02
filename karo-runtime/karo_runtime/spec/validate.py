@@ -109,6 +109,7 @@ class Validator:
         tool_names = {t.name for t in res.tools}
         skill_names = {s.source.rstrip("/").split("/")[-1] for s in res.skills}
         mcp_names = {m.name for m in res.mcp_servers}
+        repo_names = {r.name for r in res.repos}
         for a in self.team.spec.agents:
             src = self._src(f"agent:{a.name}")
             for t in a.tools:
@@ -132,11 +133,24 @@ class Validator:
                         f"agent {a.name!r} references unknown mcp server {m!r}",
                         src=src,
                     )
+            for r in a.repos:
+                if r not in repo_names:
+                    self._err(
+                        "unknown-repo",
+                        f"agent {a.name!r} references unknown repo {r!r}",
+                        src=src,
+                    )
 
     def _check_coordination(self) -> None:
         coord = self.team.spec.coordination
         agent_names = {a.name for a in self.team.spec.agents}
         pattern = coord.pattern
+
+        if coord.reviewer and coord.reviewer not in agent_names:
+            self._err(
+                "reviewer-unknown",
+                f"coordination.reviewer {coord.reviewer!r} does not name an existing agent",
+            )
 
         if pattern == Pattern.lead_and_teammates.value:
             if not coord.lead:

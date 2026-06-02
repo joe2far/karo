@@ -162,13 +162,26 @@ class Coordinator:
             tools=agent.tools,
             mcp=agent.mcp,
             skills=agent.skills,
-            working_dir=defaults.working_dir,
+            working_dir=self._working_dir(agent),
             permission_mode=(agent.permission_mode or defaults.permission_mode),
             # Accessors the adapter/attach session use (CLI §6.2).
             memory=self.memory,
             mailbox=self.mail,
             budget=self.budget,
         )
+
+    def _working_dir(self, agent) -> str:
+        """An agent that works on exactly one repo runs *in* that repo; otherwise
+        it runs in the team workspace root (which holds all its repos)."""
+        defaults = self.team.spec.defaults
+        if agent.repos:
+            from .repos import repo_path
+
+            by_name = {r.name: r for r in self.team.spec.resources.repos}
+            paths = [repo_path(by_name[n], self.team, self.dir) for n in agent.repos if n in by_name]
+            if len(paths) == 1:
+                return str(paths[0])
+        return defaults.working_dir
 
     def _harness_for(self, agent_name: str) -> str:
         agent = self._agents[agent_name]

@@ -329,6 +329,29 @@ spec:
     assert res.tasks[0].state == "done"
 
 
+async def test_explicit_reviewer_field_drives_review(tmp_path: Path):
+    """`coordination.reviewer` names the reviewer explicitly (no name convention)."""
+    seen: list[tuple] = []
+    team = _flat(tmp_path, """\
+metadata: { name: t }
+spec:
+  defaults: { permissionMode: bypass }
+  coordination: { pattern: lead-and-teammates, lead: planner, reviewer: qa }
+  interaction: { autonomy: autonomous }
+  agents:
+    - { name: planner, harness: sdk }
+    - { name: implementer, harness: sdk }
+    - { name: qa, harness: sdk }
+""")
+    coord = Coordinator(team, project_dir=tmp_path,
+                        on_event=lambda e: seen.append((e.type, e.fields.get("to_state"))))
+    res = await coord.run("build it")
+    assert res.completed
+    impl = next(t for t in res.tasks if t.owner == "implementer")
+    assert impl.reviewer == "qa"  # the explicitly-named reviewer, not "reviewer"
+    assert ("task.transition", "review") in seen
+
+
 async def test_budget_hardstop_halts(tmp_path: Path):
     team = _flat(tmp_path, """\
 metadata: { name: t }

@@ -138,6 +138,27 @@ def test_sling_cluster_dry_run_renders_agenttask(tmp_path: Path):
     assert "owner: deploy-approver" in res.output
 
 
+def test_run_prompt_from_file_flag(tmp_path: Path):
+    """`karo run -f prompt.txt` reads the objective from a file."""
+    _init(tmp_path)
+    pf = tmp_path / "prompt.txt"
+    pf.write_text("do the thing from a file")
+    res = runner.invoke(app, ["-p", str(tmp_path), "run", "-f", str(pf)])
+    assert res.exit_code == 0, res.output
+    assert "completed" in res.output
+
+
+def test_sling_prompt_from_at_file(tmp_path: Path):
+    """`karo sling agent @file` reads the prompt from a file."""
+    _init(tmp_path)
+    pf = tmp_path / "task.md"
+    pf.write_text("approve the release")
+    res = runner.invoke(app, ["-p", str(tmp_path), "--json", "sling", "reviewer", f"@{pf}"])
+    assert res.exit_code == 0, res.output
+    data = json.loads(res.output)
+    assert {t["owner"] for t in data["tasks"]} == {"reviewer"}
+
+
 def test_run_cluster_requires_team(tmp_path: Path):
     """A bare agent with --context is rejected (team = namespace is required)."""
     res = runner.invoke(app, ["run", "reviewer", "x", "--context", "c"])

@@ -67,6 +67,37 @@ spec:
     assert {"unknown-tool", "unknown-mcp", "unknown-skill"} <= c
 
 
+def test_unknown_repo_ref(tmp_path):
+    res = _team(tmp_path, """\
+metadata: { name: t }
+spec:
+  coordination: { pattern: swarm }
+  agents: [{ name: a, harness: sdk, repos: [ghost] }]
+""")
+    assert "unknown-repo" in codes(validate(res))
+
+
+def test_known_repo_ref_ok(tmp_path):
+    res = _team(tmp_path, """\
+metadata: { name: t }
+spec:
+  coordination: { pattern: swarm }
+  resources: { repos: [{ name: app, url: "https://example.com/app.git" }] }
+  agents: [{ name: a, harness: sdk, repos: [app] }]
+""")
+    assert "unknown-repo" not in codes(validate(res))
+
+
+def test_unknown_reviewer(tmp_path):
+    res = _team(tmp_path, """\
+metadata: { name: t }
+spec:
+  coordination: { pattern: lead-and-teammates, lead: planner, reviewer: ghost }
+  agents: [{ name: planner, harness: sdk }, { name: worker, harness: sdk }]
+""")
+    assert "reviewer-unknown" in codes(validate(res))
+
+
 def test_guard_matcher_resolution(tmp_path):
     res = _team(tmp_path, """\
 metadata: { name: t }
