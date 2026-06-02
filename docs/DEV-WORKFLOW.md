@@ -286,51 +286,66 @@ make build manifests
 helm upgrade --install karo charts/karo -n karo-system --create-namespace
 ```
 
-### 5b. Git credentials on cluster (service account, roadmap)
+### 5b. Git credentials on cluster: a service account
 
-Locally, the agent clones the repo and pushes the PR branch **as you**. On a
+✅ **works today.** Locally, the agent clones the repo and pushes the PR branch **as you**. On a
 cluster there is no "you" — the agent pod needs its own git identity. The KARO
-model is: keep that identity *out of the team spec* (so the spec stays
-shareable) and provide it as a **Kubernetes Secret** that the agent pod consumes
-when it clones and when the `open-pr` skill pushes.
+model: keep that identity *out of the team spec* (so the spec stays shareable)
+and provide it as a **Kubernetes Secret** the pod consumes when it clones and
+when the `open-pr` skill pushes.
 
-The intended shape (the spec already carries `resources.repos`; the pod side is
-the part still being wired):
+**Step 1 — create the service-account Secret** (a bot PAT scoped to the team's
+repos, plus the commit identity):
 
 ```bash
-# A bot/service account's PAT, scoped to the repos the team works on:
 kubectl -n dev-team create secret generic git-credentials \
   --from-literal=GITHUB_TOKEN=ghp_xxx \
   --from-literal=GIT_AUTHOR_NAME="dev-team-bot" \
   --from-literal=GIT_AUTHOR_EMAIL="dev-team-bot@your-org.com"
 ```
 
-The agent pod then (a) clones `resources.repos` via an **init-container** using
-that token, and (b) exposes it to the `open-pr` skill so `gh`/`git push`
-authenticate as the service account rather than as a person.
+**Step 2 — reference it from the team's `runtime:` block** under the well-known
+`git` key (the `runtime:` block is operator-only; it never travels with the
+shared spec, so the secret reference stays out of what colleagues clone):
 
-> **Status — read this before you rely on it.** As of today the operator's
-> provisioner builds the agent pod **without** a repo-cloning init-container and
-> **without** wiring a git secret into the pod (it wires only the Redis/Postgres
-> backend DSNs). So cluster-side repo cloning and service-account git auth are
-> **not yet functional** — this section documents the *intended* contract and the
-> exact gap, not a shipped feature. Earlier docs that said "the agent pod's
-> init-container clones the same repos on cluster" were describing this intended
-> design; treat it as roadmap until the operator grows:
->
-> 1. a clone **init-container** in `operator/internal/controller/provisioner.go`
->    (`agentDeployment`) that reads `resources.repos` and clones into a shared
->    `emptyDir` workspace volume, and
-> 2. a `runtime`-level reference to a git-credentials Secret (parallel to how
->    backend DSNs are wired in `backendEnv`) mounted into both the init-container
->    and the agent container.
->
-> Until then, the cluster path is best used with repos that don't need cloning at
-> pod start, and the PR-opening step is a local-runner flow. See
-> [`PRD-KARO-v2.md` §5](PRD-KARO-v2.md#5-reconciliation-logic-controller) for the
-> reconciliation design this slots into.
+```yaml
+# in the exported team manifest (or add it before kubectl apply)
+spec:
+  runtime:
+    secrets:
+      git: { name: git-credentials }
+```
 
-### 5c. Teammates sling at the cluster agent ✅ (design) / depends on 5b
+That's it. When the operator provisions an agent that declares `repos:`, it now:
+
+1. adds a **`clone-repos` init-container** (same agent-runtime image, which ships
+   `git`) that clones the agent's repos into a shared `/workspace` `emptyDir` —
+   the cluster equivalent of the local `./workspace` clone, scoped per-agent just
+   like `ensure_repos(only_agents=…)`;
+2. installs a **token credential helper** + commit identity from the Secret into
+   a shared, writable `HOME` volume, so both the clone and the agent container's
+   later `git push` authenticate **as the service account**, not a person;
+3. mounts `/workspace` + that `HOME` into the agent container and sets its working
+   directory (inside the single repo it owns, or the workspace root for several).
+
+The credential never lands in the manifest — only the Secret *reference* does,
+and the token is supplied to git at call time via the helper. Teams with no repos
+get the original single-container pod unchanged.
+
+> **Scope notes (honest edges):**
+> - **HTTPS token auth** is wired (the documented `GITHUB_TOKEN` path). **SSH-key**
+>   auth (`git@…` remotes) is not — use HTTPS remotes in `resources.repos` on
+>   cluster.
+> - The image ships **`git`**, so *clone + commit + push* are real on cluster.
+>   It does **not** ship **`gh`**; to have the agent *open* the PR, either layer
+>   `gh` into a derived agent image or point the `open-pr` skill at a **GitHub MCP
+>   server**. The skill already degrades gracefully when `gh` is absent.
+> - This is unit-tested in `operator/internal/controller/provisioner_test.go`
+>   (init-container, volumes, working dir, secret wiring), but **not** validated
+>   against a live cluster from this repo's CI — bring your own cluster to
+>   exercise the full path.
+
+### 5c. Teammates sling at the cluster agent ✅
 
 Once the team is deployed, **a team is a namespace** and any teammate with
 kube access can sling at it with the exact same grammar plus `--context`
@@ -344,8 +359,9 @@ kubectl --context my-cluster -n dev-team get agenttasks -w
 ```
 
 Slinging itself (creating the `AgentTask`, scale-from-zero, the claim loop) is
-implemented and envtest-tested. Whether the agent can then *clone and open a PR*
-on cluster depends on the §5b service-account wiring above.
+implemented and envtest-tested. With §5b in place the woken pod also clones the
+repo and pushes as the service account; opening the PR uses `gh`/a GitHub MCP
+server per the §5b scope notes.
 
 ---
 
@@ -358,12 +374,12 @@ on cluster depends on the §5b service-account wiring above.
 | 3. Open a PR, gated before merge | 🔧 you add an `open-pr` skill + a guard; the building blocks are first-class |
 | 4. Share skills + repo, not state/creds | ✅ works — commit the folder |
 | 5a. Export + apply to k8s | ✅ works |
-| 5b. Service-account git creds on cluster | 🔭 roadmap — operator needs a clone init-container + git-secret wiring |
-| 5c. Teammates sling via `--context` | ✅ slinging works; PR-on-cluster waits on 5b |
+| 5b. Service-account git creds on cluster | ✅ works — `runtime.secrets["git"]` → clone init-container + push auth (HTTPS token; `gh`/MCP opens the PR) |
+| 5c. Teammates sling via `--context` | ✅ works |
 
 The honest one-line answer to "could a developer do this from the docs as
 written?": **yes for the local feature→PR→share loop** (once you add the
-`open-pr` skill, which this guide gives you), and **yes for export/sling on
-cluster** — but the **service-account git path on the cluster is documented
-design, not yet implemented**, and now it's labelled as such instead of implied
-to work.
+`open-pr` skill, which this guide gives you), and **yes on cluster** — export,
+sling, scale-from-zero, and now service-account repo clone + push are all wired;
+the only piece you bring is the PR-open mechanism (`gh` in a derived image or a
+GitHub MCP server) and a live cluster to run it on.

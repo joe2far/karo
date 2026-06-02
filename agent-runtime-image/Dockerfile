@@ -4,6 +4,16 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+# git + ssh client + CA roots so the clone-repos init-container can materialize
+# spec.resources.repos into the shared workspace and the agent's open-pr skill can
+# `git push` a feature branch, authenticating as the team's git service account
+# (operator wires runtime.secrets["git"]; docs/DEV-WORKFLOW.md §5b). To open the
+# PR itself, layer `gh` into a derived image or use a GitHub MCP server — the
+# open-pr skill degrades gracefully when `gh` is absent.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git openssh-client ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install the shared runtime (same code the CLI uses) with the default cluster
 # backend extra (Postgres — tasks/memory/mailbox) + the Claude Agent SDK. The
 # base package imports without these; Postgres is the single stateful dependency

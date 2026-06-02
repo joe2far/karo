@@ -257,13 +257,13 @@ runs in the workspace root that holds them all. Use `--no-repos` to skip cloning
   helper, or a token in the URL via `${env:GITHUB_TOKEN}`). The team definition
   carries **no** credentials — a colleague clones the same team and authenticates
   as themselves (§9).
-- **On cluster (roadmap):** the *intent* is that the agent pod's init-container
-  clones the same repos from the same spec, so "which repo this agent works on"
-  stays portable — but this is **not yet wired in the operator** (the provisioner
-  builds the pod without a clone init-container or a git credential). On a cluster
-  there's no human runner to borrow auth from, so this needs a **git
-  service-account** Secret; see the full walkthrough and the exact gap in
-  [`DEV-WORKFLOW.md` §5b](DEV-WORKFLOW.md#5b-git-credentials-on-cluster-service-account-roadmap).
+- **On cluster:** the operator provisions a `clone-repos` init-container that
+  clones the same repos from the same spec into a shared workspace, so "which
+  repo this agent works on" stays portable. On a cluster there's no human runner
+  to borrow auth from, so the team works as a **git service account** — reference
+  a credentials Secret via `runtime.secrets["git"]` and the operator wires it
+  into both the clone and the agent's `git push`. Full walkthrough:
+  [`DEV-WORKFLOW.md` §5b](DEV-WORKFLOW.md#5b-git-credentials-on-cluster-a-service-account).
 
 > **Validation:** `karo validate` flags an agent that references a repo you didn't
 > declare (`unknown-repo`), just like unknown tools/skills/MCP servers.

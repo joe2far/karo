@@ -366,9 +366,9 @@ def _run_impl(
     run_dir = team.parent if team else project_dir
 
     # Materialize the agents' git repos into the workspace (local lane). On
-    # cluster the operator is *intended* to do the same via a clone init-container
-    # from the same spec, but that wiring (plus a git service-account Secret) is
-    # not yet implemented — see docs/DEV-WORKFLOW.md §5b.
+    # cluster the operator does the same via a clone init-container from the same
+    # spec, authenticating as the team's git service account
+    # (runtime.secrets["git"]) — see docs/DEV-WORKFLOW.md §5b.
     if not dry_run and not no_repos and result.team.spec.resources.repos:
         from karo_runtime.runtime.repos import ensure_repos
 

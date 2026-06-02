@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -30,6 +31,26 @@ const (
 	objectiveAnnotation = "karo.dev/objective"
 	// teamSpecMount is where the projected full team spec is mounted.
 	teamSpecMount = "/etc/karo/team.json"
+
+	// gitSecretKey is the well-known key in runtime.secrets whose SecretRef names
+	// the Secret holding git credentials (a GITHUB_TOKEN, and optional
+	// GIT_AUTHOR_NAME/GIT_AUTHOR_EMAIL) for cluster repo clone + push. This is the
+	// cluster equivalent of "auth is the runner's own git config" locally: on a
+	// cluster there is no human runner, so the team works as a service account
+	// (docs/DEV-WORKFLOW.md §5b). The team spec carries only the *reference*, never
+	// the credential — so it stays shareable.
+	gitSecretKey = "git"
+	// workspaceMount is the shared repo workspace (the cluster equivalent of the
+	// local ./workspace). The clone init-container writes here; the agent
+	// container works here. emptyDir, so it is writable under a read-only rootfs.
+	workspaceMount = "/workspace"
+	// homeMount is a writable HOME for git/gh config (credential helper, identity)
+	// shared between the init-container and the agent container so a `git push`
+	// from the open-pr skill reuses the credentials the init-container set up.
+	homeMount = "/home/agent"
+
+	workspaceVolume = "workspace"
+	homeVolume      = "agent-home"
 
 	labelTeam  = "karo.dev/team"
 	labelAgent = "karo.dev/agent"
@@ -239,9 +260,114 @@ func teamConfigMap(team *karov1.AgentTeam) (*corev1.ConfigMap, error) {
 	}, nil
 }
 
+// gitSecretName returns the name of the Secret holding git credentials
+// (runtime.secrets["git"]), or "" if the team declares none. Used to wire clone
+// + push auth as a service account on cluster (docs/DEV-WORKFLOW.md §5b).
+func gitSecretName(team *karov1.AgentTeam) string {
+	if team.Spec.Runtime == nil || team.Spec.Runtime.Secrets == nil {
+		return ""
+	}
+	if ref, ok := team.Spec.Runtime.Secrets[gitSecretKey]; ok {
+		return ref.Name
+	}
+	return ""
+}
+
+// teamRepos returns the repos declared at the team level (spec.resources.repos).
+func teamRepos(team *karov1.AgentTeam) []karov1.Repo {
+	if team.Spec.Resources == nil {
+		return nil
+	}
+	return team.Spec.Resources.Repos
+}
+
+// agentRepos resolves the subset of team repos this agent works on (its
+// frontmatter `repos:` names), mirroring the local `ensure_repos(only_agents=)`
+// scoping so a pod clones only what its agent needs.
+func agentRepos(team *karov1.AgentTeam, agent karov1.Agent) []karov1.Repo {
+	if len(agent.Repos) == 0 {
+		return nil
+	}
+	byName := make(map[string]karov1.Repo)
+	for _, r := range teamRepos(team) {
+		byName[r.Name] = r
+	}
+	out := make([]karov1.Repo, 0, len(agent.Repos))
+	for _, n := range agent.Repos {
+		if r, ok := byName[n]; ok {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// repoDest is the clone path under the workspace for a repo (its `path:` override
+// or its name), mirroring the local ./workspace/<name> convention.
+func repoDest(r karov1.Repo) string {
+	sub := r.Path
+	if sub == "" {
+		sub = r.Name
+	}
+	return workspaceMount + "/" + sub
+}
+
+// agentWorkingDir mirrors the local rule (CLI §3e): an agent with exactly one
+// repo runs *inside* it; with several it runs in the workspace root.
+func agentWorkingDir(repos []karov1.Repo) string {
+	if len(repos) == 1 {
+		return repoDest(repos[0])
+	}
+	return workspaceMount
+}
+
+// gitEnvFrom exposes every key of the git-credentials Secret (GITHUB_TOKEN,
+// GIT_AUTHOR_NAME, GIT_AUTHOR_EMAIL, …) as env vars in a container, or nil when
+// the team declares no git secret (public repos still clone, just unauthenticated).
+func gitEnvFrom(secret string) []corev1.EnvFromSource {
+	if secret == "" {
+		return nil
+	}
+	return []corev1.EnvFromSource{{
+		SecretRef: &corev1.SecretEnvSource{
+			LocalObjectReference: corev1.LocalObjectReference{Name: secret},
+		},
+	}}
+}
+
+// cloneScript renders the init-container's clone/update script. The token is
+// supplied at runtime via a credential helper (so it is never baked into the
+// manifest) and the global git config lives on the shared home volume, so the
+// agent container's later `git push` reuses the same credentials and identity.
+func cloneScript(repos []karov1.Repo, hasSecret bool) string {
+	var b strings.Builder
+	b.WriteString("set -eu\n")
+	b.WriteString("export HOME=" + homeMount + "\n")
+	b.WriteString("git config --global --add safe.directory '*'\n")
+	if hasSecret {
+		b.WriteString("git config --global credential.helper " +
+			"'!f() { echo username=x-access-token; echo \"password=$GITHUB_TOKEN\"; }; f'\n")
+		b.WriteString("[ -n \"${GIT_AUTHOR_NAME:-}\" ] && git config --global user.name \"$GIT_AUTHOR_NAME\" || true\n")
+		b.WriteString("[ -n \"${GIT_AUTHOR_EMAIL:-}\" ] && git config --global user.email \"$GIT_AUTHOR_EMAIL\" || true\n")
+	}
+	for _, r := range repos {
+		dest := repoDest(r)
+		if r.Ref != "" {
+			fmt.Fprintf(&b, "if [ -d %q/.git ]; then git -C %q fetch --all --prune && git -C %q checkout %q; "+
+				"else git clone --branch %q %q %q; fi\n", dest, dest, dest, r.Ref, r.Ref, r.URL, dest)
+		} else {
+			fmt.Fprintf(&b, "if [ -d %q/.git ]; then git -C %q fetch --all --prune; "+
+				"else git clone %q %q; fi\n", dest, dest, r.URL, dest)
+		}
+	}
+	return b.String()
+}
+
 // agentDeployment builds the per-agent Deployment running the agent-runtime
 // image under the bootstrap contract (v2 §4.1). Replicas are 0 under
-// scale-to-zero (the Dispatcher scales up on demand), else 1.
+// scale-to-zero (the Dispatcher scales up on demand), else 1. When the agent
+// works on git repos, a `clone-repos` init-container materializes them into a
+// shared workspace (the cluster equivalent of the local clone), authenticating
+// as the team's git service account (docs/DEV-WORKFLOW.md §5b).
 func agentDeployment(team *karov1.AgentTeam, agent karov1.Agent) *appsv1.Deployment {
 	var replicas int32 = 1
 	if scaleToZero(team) {
@@ -253,6 +379,14 @@ func agentDeployment(team *karov1.AgentTeam, agent karov1.Agent) *appsv1.Deploym
 	readOnly := true
 	noPrivEsc := false
 	var runAsUser int64 = 65532
+	secCtx := &corev1.SecurityContext{
+		RunAsNonRoot:             &nonRoot,
+		RunAsUser:                &runAsUser,
+		ReadOnlyRootFilesystem:   &readOnly,
+		AllowPrivilegeEscalation: &noPrivEsc,
+		Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
+	}
+	pullPolicy := agentPullPolicy(team)
 
 	container := corev1.Container{
 		Name:  "agent",
@@ -261,16 +395,56 @@ func agentDeployment(team *karov1.AgentTeam, agent karov1.Agent) *appsv1.Deploym
 		VolumeMounts: []corev1.VolumeMount{
 			{Name: "spec", MountPath: "/etc/karo", ReadOnly: true},
 		},
-		SecurityContext: &corev1.SecurityContext{
-			RunAsNonRoot:             &nonRoot,
-			RunAsUser:                &runAsUser,
-			ReadOnlyRootFilesystem:   &readOnly,
-			AllowPrivilegeEscalation: &noPrivEsc,
-			Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
-		},
+		SecurityContext: secCtx,
 	}
-	if pp := agentPullPolicy(team); pp != "" {
-		container.ImagePullPolicy = pp
+	if pullPolicy != "" {
+		container.ImagePullPolicy = pullPolicy
+	}
+
+	volumes := []corev1.Volume{{
+		Name: "spec",
+		VolumeSource: corev1.VolumeSource{
+			ConfigMap: &corev1.ConfigMapVolumeSource{
+				LocalObjectReference: corev1.LocalObjectReference{Name: teamConfigMapName(team)},
+			},
+		},
+	}}
+
+	// Git working repos: clone the agent's repos into a shared workspace via an
+	// init-container, and give the agent container that workspace, a writable HOME
+	// (shared with the init-container so `git push` reuses its credentials), and
+	// the git service-account env (docs/DEV-WORKFLOW.md §5b). Teams without repos
+	// keep the original single-container pod shape unchanged.
+	var initContainers []corev1.Container
+	if repos := agentRepos(team, agent); len(repos) > 0 {
+		gitSecret := gitSecretName(team)
+		repoMounts := []corev1.VolumeMount{
+			{Name: workspaceVolume, MountPath: workspaceMount},
+			{Name: homeVolume, MountPath: homeMount},
+		}
+		volumes = append(volumes,
+			corev1.Volume{Name: workspaceVolume, VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
+			corev1.Volume{Name: homeVolume, VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
+		)
+
+		clone := corev1.Container{
+			Name:            "clone-repos",
+			Image:           agentImage(team),
+			Command:         []string{"sh", "-c", cloneScript(repos, gitSecret != "")},
+			EnvFrom:         gitEnvFrom(gitSecret),
+			VolumeMounts:    repoMounts,
+			SecurityContext: secCtx,
+			WorkingDir:      workspaceMount,
+		}
+		if pullPolicy != "" {
+			clone.ImagePullPolicy = pullPolicy
+		}
+		initContainers = append(initContainers, clone)
+
+		container.VolumeMounts = append(container.VolumeMounts, repoMounts...)
+		container.Env = append(container.Env, corev1.EnvVar{Name: "HOME", Value: homeMount})
+		container.EnvFrom = append(container.EnvFrom, gitEnvFrom(gitSecret)...)
+		container.WorkingDir = agentWorkingDir(repos)
 	}
 
 	return &appsv1.Deployment{
@@ -285,17 +459,9 @@ func agentDeployment(team *karov1.AgentTeam, agent karov1.Agent) *appsv1.Deploym
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: labels},
 				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{container},
-					Volumes: []corev1.Volume{{
-						Name: "spec",
-						VolumeSource: corev1.VolumeSource{
-							ConfigMap: &corev1.ConfigMapVolumeSource{
-								LocalObjectReference: corev1.LocalObjectReference{
-									Name: teamConfigMapName(team),
-								},
-							},
-						},
-					}},
+					InitContainers: initContainers,
+					Containers:     []corev1.Container{container},
+					Volumes:        volumes,
 				},
 			},
 		},
