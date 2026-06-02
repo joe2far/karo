@@ -30,6 +30,7 @@ type AgentTeamReconciler struct {
 // +kubebuilder:rbac:groups=karo.dev,resources=agentteams/finalizers,verbs=update
 // +kubebuilder:rbac:groups=karo.dev,resources=agenttasks,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=pods;services;configmaps,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile implements the reconciliation loop (PRD-KARO-v2.md §5).
 func (r *AgentTeamReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -51,9 +52,20 @@ func (r *AgentTeamReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	// 2. Ensure backends (placeholder: real impl verifies Redis/Postgres §5.2).
 	r.setCondition(&team, "BackendsReady", metav1.ConditionTrue, "Assumed", "backends assumed reachable")
 
-	// 3-4. Provision agents (scale-to-zero default registers with Dispatcher;
-	//      eager provisioning would create one pod per agent §5.4).
-	team.Status.ActiveAgents = countActiveAgents(&team)
+	// 3-4. Provision agents: create-or-update the per-agent ConfigMap + Deployment
+	//      (scale-to-zero → 0 replicas until a task arrives). ActiveAgents is the
+	//      observed count of deployments with a ready replica (§5.4).
+	active, err := r.provisionAgents(ctx, &team)
+	if err != nil {
+		logger.Error(err, "provisioning agents failed")
+		r.setCondition(&team, "Ready", metav1.ConditionFalse, "ProvisionFailed", err.Error())
+		team.Status.Phase = "Degraded"
+		if uerr := r.Status().Update(ctx, &team); uerr != nil {
+			return ctrl.Result{}, uerr
+		}
+		return ctrl.Result{}, err
+	}
+	team.Status.ActiveAgents = active
 
 	// 6. Budget status reflects the authoritative counter (status only; §5.6).
 	if team.Spec.Budgets != nil && team.Spec.Budgets.Team != nil {

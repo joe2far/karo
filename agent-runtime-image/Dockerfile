@@ -4,10 +4,11 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install the shared runtime (same code the CLI uses) + the Claude Agent SDK.
+# Install the shared runtime (same code the CLI uses) with the cluster backend
+# extras (Redis/Postgres) + the Claude Agent SDK. The base package imports
+# without these; they enable the operator-lane store Protocols (v2 §4.1/§4.2).
 COPY karo-runtime/ /app/karo-runtime/
-RUN pip install --no-cache-dir /app/karo-runtime/ \
-    && pip install --no-cache-dir "claude-agent-sdk>=0.1.0" || true
+RUN pip install --no-cache-dir "/app/karo-runtime/[sdk,redis,postgres]"
 
 COPY agent-runtime-image/entrypoint.py /app/entrypoint.py
 
