@@ -42,6 +42,7 @@ def _id(prefix: str) -> str:
 class Task:
     objective: str
     owner: Optional[str] = None
+    reviewer: Optional[str] = None  # reviewer agent for the `review` state (M2)
     acceptance_criteria: list[str] = field(default_factory=list)
     depends_on: list[str] = field(default_factory=list)
     state: str = TaskState.pending.value
@@ -112,8 +113,16 @@ class TaskStore(Protocol):
     async def get(self, task_id: str) -> Optional[Task]: ...
     async def list(self, state: Optional[str] = None) -> list[Task]: ...
     async def update(self, task: Task) -> Task: ...
-    async def claim(self, owner: str, lease_ttl: float = 60.0) -> Optional[Task]:
-        """Atomically claim the next ready ``pending`` task, or return None."""
+    async def claim(
+        self, owner: str, lease_ttl: float = 60.0, agent: Optional[str] = None
+    ) -> Optional[Task]:
+        """Atomically claim the next ready ``pending`` task, or return None.
+
+        When ``agent`` is set, only tasks owned by ``agent`` (or unowned) are
+        eligible — so a cluster pod claims only its agent's work while unowned
+        (swarm) tasks remain first-available. ``owner`` is the claimant identity
+        recorded on the task.
+        """
         ...
 
 

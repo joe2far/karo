@@ -100,12 +100,15 @@ class PostgresTaskStore:
             )
         return task
 
-    async def claim(self, owner: str, lease_ttl: float = 60.0) -> Optional[Task]:
+    async def claim(
+        self, owner: str, lease_ttl: float = 60.0, agent: Optional[str] = None
+    ) -> Optional[Task]:
         """Atomically claim the next ready pending task (FOR UPDATE SKIP LOCKED).
 
         A task is ready when state='pending' and every dependency is 'done'. A
-        stale lease (expired) on an assigned task is reclaimable. Two claimants
-        never get the same row.
+        stale lease (expired) on an assigned task is reclaimable. When ``agent``
+        is set, only tasks owned by that agent (or unowned) are eligible — so a
+        pod claims only its work. Two claimants never get the same row.
         """
         now = time.time()
         lease = now + lease_ttl
@@ -119,6 +122,7 @@ class PostgresTaskStore:
                         t.state = 'pending'
                         OR (t.state = 'assigned' AND t.lease IS NOT NULL AND t.lease < $1)
                     )
+                    AND ($2::text IS NULL OR t.owner IS NULL OR t.owner = $2)
                     AND NOT EXISTS (
                         SELECT 1 FROM jsonb_array_elements_text(t.depends_on) dep
                         WHERE (SELECT state FROM {self.table} d WHERE d.id = dep) IS DISTINCT FROM 'done'
@@ -127,7 +131,7 @@ class PostgresTaskStore:
                     FOR UPDATE SKIP LOCKED
                     LIMIT 1
                     """,
-                    now,
+                    now, agent,
                 )
                 if row is None:
                     return None

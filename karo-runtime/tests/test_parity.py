@@ -101,17 +101,13 @@ def test_local_run_is_deterministic(tmp_path):
     assert sig1 == sig2
 
 
-@pytest.mark.xfail(
-    reason="Parity Checkpoint A is an M2 deliverable. Outstanding:\n  - "
-    + "\n  - ".join(M2_REQUIREMENTS),
-    strict=False,
-)
 def test_parity_checkpoint_a_runtime(tmp_path):
-    """RUNTIME parity: local (file) == cluster (redis/postgres) task graph + outputs.
+    """RUNTIME parity: local (file) == cluster (Postgres) task graph + outputs.
 
-    Marked xfail until M2 (see M2_REQUIREMENTS). When KARO_TEST_REDIS_URL and
-    KARO_TEST_PG_DSN are set (kind), this runs for real and will xpass once M2
-    coordination makes the two backends agree."""
+    M2 delivered the requirements in ``M2_REQUIREMENTS`` (atomic claim in the run
+    loop, lead decomposition + mailbox handoff, review state, resume), so this now
+    passes for real when ``KARO_TEST_PG_DSN`` is set (e.g. on kind); it skips
+    cleanly without a Postgres DSN."""
     pg_dsn = os.environ.get("KARO_TEST_PG_DSN")
     if not pg_dsn:
         pytest.skip(

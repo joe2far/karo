@@ -83,7 +83,9 @@ class FileTaskStore:
         _atomic_write(self._task_path(task.id), json.dumps(task.to_dict()))
         return task
 
-    async def claim(self, owner: str, lease_ttl: float = 60.0) -> Optional[Task]:
+    async def claim(
+        self, owner: str, lease_ttl: float = 60.0, agent: Optional[str] = None
+    ) -> Optional[Task]:
         with _flock(self._lock):
             tasks = sorted(self._read_all(), key=lambda t: t.created)
             done_ids = {t.id for t in tasks if t.state == TaskState.done.value}
@@ -97,6 +99,9 @@ class FileTaskStore:
                     and t.lease < now
                 )
                 if not (claimable or stale):
+                    continue
+                # Agent-scoped claim: only this agent's tasks (or unowned).
+                if agent is not None and t.owner not in (None, agent):
                     continue
                 if not all(dep in done_ids for dep in t.depends_on):
                     continue

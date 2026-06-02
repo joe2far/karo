@@ -13,12 +13,50 @@ def _flat(tmp_path: Path, body: str):
     return compile_flat(f).team
 
 
-async def test_lead_crew_runs_to_completion(lead_crew: Path):
+async def test_lead_crew_decomposes_and_synthesizes(lead_crew: Path):
+    """M2 lead-and-teammates: one teammate task + a lead synthesis task gated on it."""
     team = compile_folder(lead_crew).team
     coord = Coordinator(team, project_dir=lead_crew, dry_run=True)
     res = await coord.run("objective")
-    # one task per teammate (worker); planner is the lead
-    assert all(t.owner == "worker" for t in res.tasks)
+    by_owner = {t.owner: t for t in res.tasks}
+    assert "worker" in by_owner and "planner" in by_owner  # teammate + lead synth
+    synth = by_owner["planner"]
+    assert synth.depends_on == [by_owner["worker"].id]  # synthesis waits on teammate
+
+
+async def test_lead_crew_runs_to_completion_with_handoff(lead_crew: Path):
+    """Full run: teammate works, reports to the lead's mailbox, lead synthesizes."""
+    team = compile_folder(lead_crew).team
+    coord = Coordinator(team, project_dir=lead_crew, dry_run=False)
+    res = await coord.run("ship the feature")
+    assert res.completed
+    assert all(t.state == "done" for t in res.tasks)
+    # the worker reported to the lead's (planner) mailbox (mailbox handoff)
+    inbox = await coord.mail.inbox("planner")
+    assert any(m.sender == "worker" for m in inbox)
+
+
+async def test_lead_and_teammates_review_state(tmp_path: Path):
+    """A reviewer agent drives the `review` state before a task is done (M2)."""
+    team = _flat(tmp_path, """\
+metadata: { name: t }
+spec:
+  defaults: { permissionMode: bypass }
+  coordination: { pattern: lead-and-teammates, lead: planner }
+  interaction: { autonomy: autonomous }
+  agents:
+    - { name: planner, harness: sdk }
+    - { name: implementer, harness: sdk }
+    - { name: reviewer, harness: sdk }
+""")
+    coord = Coordinator(team, project_dir=tmp_path, dry_run=False)
+    res = await coord.run("build it")
+    assert res.completed
+    # the implementer task carried a reviewer and the reviewer produced memory
+    impl = next(t for t in res.tasks if t.owner == "implementer")
+    assert impl.reviewer == "reviewer"
+    recs = await coord.memory.query("team")
+    assert any("reviewer" in r.tags for r in recs)
 
 
 async def test_dry_run_plans_without_executing(lead_crew: Path):
