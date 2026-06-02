@@ -1,0 +1,482 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.14.0
+  name: agentteams.karo.dev
+spec:
+  group: karo.dev
+  names:
+    kind: AgentTeam
+    listKind: AgentTeamList
+    plural: agentteams
+    shortNames:
+    - at
+    singular: agentteam
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.activeAgents
+      name: Agents
+      type: integer
+    - jsonPath: .spec.coordination.pattern
+      name: Pattern
+      type: string
+    name: v1
+    schema:
+      openAPIV3Schema:
+        description: AgentTeam is the primary KARO custom resource.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: 'AgentTeamSpec is the desired state: the shared compiled
+              body + runtime block.'
+            properties:
+              agents:
+                items:
+                  description: Agent is a single role within the team (CLI §4.2).
+                  properties:
+                    harness:
+                      type: string
+                    instructions:
+                      type: string
+                    interaction:
+                      description: Interaction is the attach & direct config (CLI
+                        §13).
+                      properties:
+                        attachable:
+                          type: boolean
+                        autonomy:
+                          enum:
+                          - supervised
+                          - autonomous
+                          type: string
+                        guards:
+                          items:
+                            description: Guard is a pause-and-flag rule (CLI §13).
+                            properties:
+                              pauseBefore:
+                                items:
+                                  type: string
+                                type: array
+                              pauseOn:
+                                enum:
+                                - taskComplete
+                                - planReady
+                                - error
+                                type: string
+                            type: object
+                          type: array
+                        pauseTimeout:
+                          type: integer
+                      type: object
+                    mailbox:
+                      type: string
+                    mcp:
+                      items:
+                        type: string
+                      type: array
+                    model:
+                      description: ModelBinding selects the LLM backend for an agent
+                        (CLI §4.2).
+                      properties:
+                        id:
+                          type: string
+                        profile:
+                          description: Profile is a LOCAL credential selection mechanism;
+                            ignored on cluster (§8).
+                          type: string
+                        provider:
+                          enum:
+                          - anthropic
+                          - bedrock
+                          - vertex
+                          type: string
+                      type: object
+                    name:
+                      type: string
+                    skills:
+                      items:
+                        type: string
+                      type: array
+                    tools:
+                      items:
+                        type: string
+                      type: array
+                  required:
+                  - name
+                  type: object
+                minItems: 1
+                type: array
+              budgets:
+                description: Budgets group team and per-agent budget policy.
+                properties:
+                  perAgent:
+                    type: boolean
+                  team:
+                    description: TeamBudget is the team-wide token budget (CLI §8).
+                    properties:
+                      limit:
+                        format: int64
+                        minimum: 1
+                        type: integer
+                      onExceed:
+                        enum:
+                        - warn
+                        - pause
+                        - hardstop
+                        type: string
+                      provider:
+                        type: string
+                      window:
+                        type: string
+                    required:
+                    - limit
+                    type: object
+                type: object
+              coordination:
+                description: Coordination is the team coordination policy (CLI §11).
+                properties:
+                  lead:
+                    type: string
+                  pattern:
+                    enum:
+                    - lead-and-teammates
+                    - pipeline
+                    - swarm
+                    type: string
+                  pipeline:
+                    description: Pipeline declares the deterministic stage order for
+                      the pipeline pattern.
+                    properties:
+                      stages:
+                        items:
+                          type: string
+                        type: array
+                    type: object
+                type: object
+              defaults:
+                description: Defaults are inherited by agents unless overridden (CLI
+                  §4.2).
+                properties:
+                  harness:
+                    enum:
+                    - sdk
+                    - claude-code
+                    - cursor
+                    - codex
+                    type: string
+                  model:
+                    description: ModelBinding selects the LLM backend for an agent
+                      (CLI §4.2).
+                    properties:
+                      id:
+                        type: string
+                      profile:
+                        description: Profile is a LOCAL credential selection mechanism;
+                          ignored on cluster (§8).
+                        type: string
+                      provider:
+                        enum:
+                        - anthropic
+                        - bedrock
+                        - vertex
+                        type: string
+                    type: object
+                  permissionMode:
+                    enum:
+                    - prompt
+                    - acceptEdits
+                    - plan
+                    - bypass
+                    type: string
+                  workingDir:
+                    type: string
+                type: object
+              interaction:
+                description: Interaction is the attach & direct config (CLI §13).
+                properties:
+                  attachable:
+                    type: boolean
+                  autonomy:
+                    enum:
+                    - supervised
+                    - autonomous
+                    type: string
+                  guards:
+                    items:
+                      description: Guard is a pause-and-flag rule (CLI §13).
+                      properties:
+                        pauseBefore:
+                          items:
+                            type: string
+                          type: array
+                        pauseOn:
+                          enum:
+                          - taskComplete
+                          - planReady
+                          - error
+                          type: string
+                      type: object
+                    type: array
+                  pauseTimeout:
+                    type: integer
+                type: object
+              runtime:
+                description: RuntimeSpec is the KARO v2 runtime block (v2 §3.1).
+                properties:
+                  backends:
+                    description: Backends are the concrete coordination stores on
+                      cluster.
+                    properties:
+                      mailbox:
+                        description: Backend maps an abstract backend to a concrete
+                          cluster service (v2 §3.1).
+                        properties:
+                          kind:
+                            enum:
+                            - redis
+                            - postgres
+                            - sqlite
+                            - file
+                            type: string
+                          secretRef:
+                            description: SecretRef references a Secret name/key. Shared
+                              shape with `karo export` (§12).
+                            properties:
+                              key:
+                                type: string
+                              name:
+                                type: string
+                            required:
+                            - name
+                            type: object
+                        required:
+                        - kind
+                        type: object
+                      memory:
+                        description: Backend maps an abstract backend to a concrete
+                          cluster service (v2 §3.1).
+                        properties:
+                          kind:
+                            enum:
+                            - redis
+                            - postgres
+                            - sqlite
+                            - file
+                            type: string
+                          secretRef:
+                            description: SecretRef references a Secret name/key. Shared
+                              shape with `karo export` (§12).
+                            properties:
+                              key:
+                                type: string
+                              name:
+                                type: string
+                            required:
+                            - name
+                            type: object
+                        required:
+                        - kind
+                        type: object
+                      tasks:
+                        description: Backend maps an abstract backend to a concrete
+                          cluster service (v2 §3.1).
+                        properties:
+                          kind:
+                            enum:
+                            - redis
+                            - postgres
+                            - sqlite
+                            - file
+                            type: string
+                          secretRef:
+                            description: SecretRef references a Secret name/key. Shared
+                              shape with `karo export` (§12).
+                            properties:
+                              key:
+                                type: string
+                              name:
+                                type: string
+                            required:
+                            - name
+                            type: object
+                        required:
+                        - kind
+                        type: object
+                    type: object
+                  idleTimeoutSeconds:
+                    type: integer
+                  image:
+                    description: ImageSpec is the agent-runtime image config.
+                    properties:
+                      agentRuntime:
+                        type: string
+                      pullPolicy:
+                        type: string
+                    type: object
+                  maxConcurrentAgents:
+                    type: integer
+                  observability:
+                    description: Observability configures metrics + tracing (v2 §9).
+                    properties:
+                      metrics:
+                        type: string
+                      tracing:
+                        description: TracingSpec configures OTel tracing export.
+                        properties:
+                          endpoint:
+                            type: string
+                          exporter:
+                            type: string
+                          sampling:
+                            type: string
+                        type: object
+                    type: object
+                  scaleToZero:
+                    type: boolean
+                  secrets:
+                    additionalProperties:
+                      description: SecretRef references a Secret name/key. Shared
+                        shape with `karo export` (§12).
+                      properties:
+                        key:
+                          type: string
+                        name:
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    type: object
+                type: object
+            required:
+            - agents
+            type: object
+          status:
+            description: AgentTeamStatus is the observed state (v2 §3.1).
+            properties:
+              activeAgents:
+                type: integer
+              budget:
+                description: BudgetStatus reflects the authoritative counter (v2 §5.6).
+                properties:
+                  limit:
+                    format: int64
+                    type: integer
+                  provider:
+                    type: string
+                  used:
+                    format: int64
+                    type: integer
+                  window:
+                    type: string
+                type: object
+              conditions:
+                items:
+                  description: "Condition contains details for one aspect of the current
+                    state of this API Resource.\n---\nThis struct is intended for
+                    direct use as an array at the field path .status.conditions.  For
+                    example,\n\n\n\ttype FooStatus struct{\n\t    // Represents the
+                    observations of a foo's current state.\n\t    // Known .status.conditions.type
+                    are: \"Available\", \"Progressing\", and \"Degraded\"\n\t    //
+                    +patchMergeKey=type\n\t    // +patchStrategy=merge\n\t    // +listType=map\n\t
+                    \   // +listMapKey=type\n\t    Conditions []metav1.Condition `json:\"conditions,omitempty\"
+                    patchStrategy:\"merge\" patchMergeKey:\"type\" protobuf:\"bytes,1,rep,name=conditions\"`\n\n\n\t
+                    \   // other fields\n\t}"
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: |-
+                        type of condition in CamelCase or in foo.example.com/CamelCase.
+                        ---
+                        Many .condition.type values are consistent across resources like Available, but because arbitrary conditions can be
+                        useful (see .node.status.conditions), the ability to deconflict is important.
+                        The regex it matches is (dns1123SubdomainFmt/)?(qualifiedNameFmt)
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              observedGeneration:
+                format: int64
+                type: integer
+              pendingTasks:
+                type: integer
+              phase:
+                enum:
+                - Pending
+                - Provisioning
+                - Running
+                - Idle
+                - Degraded
+                - Failed
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

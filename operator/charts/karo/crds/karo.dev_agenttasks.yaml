@@ -1,0 +1,120 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.14.0
+  name: agenttasks.karo.dev
+spec:
+  group: karo.dev
+  names:
+    kind: AgentTask
+    listKind: AgentTaskList
+    plural: agenttasks
+    singular: agenttask
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.state
+      name: State
+      type: string
+    - jsonPath: .status.owner
+      name: Owner
+      type: string
+    - jsonPath: .spec.team
+      name: Team
+      type: string
+    name: v1
+    schema:
+      openAPIV3Schema:
+        description: AgentTask is a durable task projection.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              AgentTaskSpec is one durable task (PRD-KARO-v2.md §3.2). The persisted source
+              of truth is the tasks backend; AgentTask is the K8s-visible projection.
+            properties:
+              acceptanceCriteria:
+                items:
+                  type: string
+                type: array
+              dependsOn:
+                description: DependsOn is the runtime projection of coordination.pipeline.stages
+                  (§6).
+                items:
+                  type: string
+                type: array
+              guard:
+                description: Guard is a pause-and-flag rule (CLI §13).
+                properties:
+                  pauseBefore:
+                    items:
+                      type: string
+                    type: array
+                  pauseOn:
+                    enum:
+                    - taskComplete
+                    - planReady
+                    - error
+                    type: string
+                type: object
+              objective:
+                type: string
+              owner:
+                type: string
+              team:
+                type: string
+            required:
+            - objective
+            - team
+            type: object
+          status:
+            description: AgentTaskStatus mirrors the task lifecycle (CLI §11, v2 §3.2).
+            properties:
+              attachedBy:
+                type: string
+              attempts:
+                type: integer
+              lastTransition:
+                format: date-time
+                type: string
+              lease:
+                format: date-time
+                type: string
+              owner:
+                type: string
+              state:
+                enum:
+                - pending
+                - assigned
+                - in-progress
+                - blocked
+                - review
+                - paused
+                - done
+                - failed
+                - cancelled
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
