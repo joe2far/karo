@@ -532,7 +532,7 @@ All commands: `karo <command> [flags]`. Global flags: `--project/-p <dir>` (defa
 
 ### `karo init`
 Scaffold a new project **as the folder convention (§4.0)**.
-- Flags: `--template <name>` (`minimal` | `lead-crew` | `pipeline`), `--name <team>`, `--flat` (emit a single inline `team.yaml` instead of the folder, for one-off teams).
+- Flags: `--template <name>` (`minimal` | `lead-team` | `pipeline`), `--name <team>`, `--flat` (emit a single inline `team.yaml` instead of the folder, for one-off teams).
 - Creates (folder mode, default): `karo.yaml`, `agents/<role>/AGENT.md` per template role, `skills/`, `tools/`, `mcp/servers.yaml`, `shared/`, `.karo/` (gitignored), `.gitignore`, `README.md`. Scaffolded templates contain **no** org-specific identifiers (CI-checked).
 
 ### `karo compile`
@@ -836,7 +836,7 @@ karo/                              # this CLI repo
     exporter/
       manifest.py                  # karo export -> KARO v2 (namespace, runtime, secrets transform,
                                    #   harness gating, pack pinning, skills/tools bundling)
-  templates/                       # init templates: minimal, lead-crew, pipeline
+  templates/                       # init templates: minimal, lead-team, pipeline
                                    #   each template IS a §4.0 folder skeleton (no org identifiers)
   tests/
 ```
@@ -872,7 +872,7 @@ Target: usable locally by M2 **and** the local→Kind handoff demonstrable at Pa
 - **Coordinator tests**: deterministic task-lifecycle and resume tests with a fake harness; **atomic-claim concurrency test** (no double execution under parallel pull).
 - **Budget tests**: enforcement at each `onExceed` mode via the authoritative counter (no overspend under concurrency).
 - **Canonicalization / export round-trip test**: `local spec == export.spec` after canonicalization, across a Python emit and a Go round-trip of the same fixture (catches the YAML-int and block-scalar drift).
-- **Smoke e2e** (opt-in, requires creds): a 3-agent `lead-crew` completes a trivial objective.
+- **Smoke e2e** (opt-in, requires creds): a 3-agent `lead-team` completes a trivial objective.
 
 ---
 

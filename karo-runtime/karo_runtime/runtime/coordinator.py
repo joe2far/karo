@@ -11,6 +11,7 @@ the same loop against Redis/Postgres stores instead of file stores.
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -33,6 +34,7 @@ class RunResult:
     halted: bool = False
     halt_reason: str = ""
     paused_agents: list[str] = field(default_factory=list)
+    turns: int = 0  # turns this pass executed (0 = nothing claimable; used by serve())
 
     @property
     def completed(self) -> bool:
@@ -50,6 +52,7 @@ class Coordinator:
         autonomy_override: Optional[str] = None,
         max_turns: Optional[int] = None,
         agent: Optional[str] = None,
+        target_agent: Optional[str] = None,
         on_event=None,
     ):
         self.team = team
@@ -63,6 +66,11 @@ class Coordinator:
         # sharing one Postgres never duplicate the task graph. None = local
         # single-process: plans once and drives all agents.
         self.agent = agent
+        # Direct dispatch (the local "sling to one agent" path, CLI §7): when set,
+        # the objective becomes a *single* task owned by this agent, bypassing the
+        # coordination pattern's lead decomposition. Distinct from `agent` (which
+        # is cluster pod-scoping over an already-planned graph).
+        self.target_agent = target_agent
         self._agents = {a.name: a for a in team.spec.agents}
 
         karo = self.dir / ".karo"
@@ -101,6 +109,22 @@ class Coordinator:
         existing = await self.tasks.list()
         if existing:  # resume: keep persisted tasks
             return existing
+        # Direct dispatch: one task, owned by the targeted agent, no decomposition.
+        if self.target_agent:
+            direct = Task(
+                objective=objective,
+                owner=self.target_agent,
+                acceptance_criteria=[f"{self.target_agent} completes: {objective[:60]}"],
+            )
+            created_task = await self.tasks.create(direct)
+            self.events.emit(
+                EventType.task_transition.value,
+                agent=created_task.owner,
+                task_id=created_task.id,
+                from_state="(new)",
+                to_state=created_task.state,
+            )
+            return [created_task]
         created = []
         for task in plan_tasks(self.team, objective):
             created.append(await self.tasks.create(task))
@@ -140,13 +164,26 @@ class Coordinator:
             tools=agent.tools,
             mcp=agent.mcp,
             skills=agent.skills,
-            working_dir=defaults.working_dir,
+            working_dir=self._working_dir(agent),
             permission_mode=(agent.permission_mode or defaults.permission_mode),
             # Accessors the adapter/attach session use (CLI §6.2).
             memory=self.memory,
             mailbox=self.mail,
             budget=self.budget,
         )
+
+    def _working_dir(self, agent) -> str:
+        """An agent that works on exactly one repo runs *in* that repo; otherwise
+        it runs in the team workspace root (which holds all its repos)."""
+        defaults = self.team.spec.defaults
+        if agent.repos:
+            from .repos import repo_path
+
+            by_name = {r.name: r for r in self.team.spec.resources.repos}
+            paths = [repo_path(by_name[n], self.team, self.dir) for n in agent.repos if n in by_name]
+            if len(paths) == 1:
+                return str(paths[0])
+        return defaults.working_dir
 
     def _harness_for(self, agent_name: str) -> str:
         agent = self._agents[agent_name]
@@ -189,8 +226,14 @@ class Coordinator:
         self._turns = 0
         halted = False
         halt_reason = ""
-        # A pod (agent set) claims only its own work; local drives all agents.
-        agents = [self.agent] if self.agent else [a.name for a in self.team.spec.agents]
+        # A pod (agent set) claims only its own work; a direct dispatch
+        # (target_agent) drives just that agent; otherwise local drives all agents.
+        if self.agent:
+            agents = [self.agent]
+        elif self.target_agent:
+            agents = [self.target_agent]
+        else:
+            agents = [a.name for a in self.team.spec.agents]
 
         while True:
             if self.max_turns is not None and self._turns >= self.max_turns:
@@ -279,7 +322,48 @@ class Coordinator:
             self.run_id, all_tasks,
             halted=halted, halt_reason=halt_reason,
             paused_agents=sorted(set(paused)),
+            turns=self._turns,
         )
+
+    async def serve(
+        self,
+        objective: str,
+        *,
+        idle_timeout: Optional[float] = 300.0,
+        poll_interval: float = 1.0,
+        max_cycles: Optional[int] = None,
+    ) -> RunResult:
+        """Long-lived pod claim loop (v2 §5.1).
+
+        ``run()`` drains the work this pod can currently claim and returns; on a
+        cluster a teammate pod may start *before* the lead has planned (so there
+        is nothing to claim yet). ``serve`` repeats ``run()`` — polling while idle
+        — so late work is picked up. It exits when the task graph is complete (the
+        operator then scales the pod to zero), when halted (budget), or after
+        ``idle_timeout`` with no claimable work (a missing/dead lead ⇒ the
+        Deployment restarts the pod and it retries). ``max_cycles`` bounds it for
+        tests.
+        """
+        idle = 0.0
+        cycles = 0
+        res = await self.run(objective)
+        while True:
+            cycles += 1
+            # All tasks terminal (and there *are* tasks) → the graph is done.
+            if res.tasks and res.completed:
+                return res
+            if res.halted:
+                return res
+            if max_cycles is not None and cycles >= max_cycles:
+                return res
+            if res.turns > 0:
+                idle = 0.0  # made progress; reset the idle clock
+            else:
+                idle += poll_interval
+                if idle_timeout is not None and idle >= idle_timeout:
+                    return res
+            await asyncio.sleep(poll_interval)
+            res = await self.run(objective)
 
     # -- run helpers ------------------------------------------------------ #
     def _budget_gate(self, owner: str, text: str):

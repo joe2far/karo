@@ -8,9 +8,12 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	karov1 "github.com/joe2far/karo/operator/api/v1"
 )
@@ -181,10 +184,24 @@ func (r *AgentTeamReconciler) setCondition(team *karov1.AgentTeam, condType stri
 	team.Status.Conditions = append(team.Status.Conditions, cond)
 }
 
+// taskToTeam maps an AgentTask event to its team's reconcile request so that a
+// task arriving (e.g. via `karo sling --context`) or changing state wakes the
+// team reconciler to scale the right agent up or down (v2 §5.1).
+func taskToTeam(_ context.Context, obj client.Object) []reconcile.Request {
+	task, ok := obj.(*karov1.AgentTask)
+	if !ok || task.Spec.Team == "" {
+		return nil
+	}
+	return []reconcile.Request{{
+		NamespacedName: types.NamespacedName{Namespace: task.GetNamespace(), Name: task.Spec.Team},
+	}}
+}
+
 // SetupWithManager wires the controller.
 func (r *AgentTeamReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&karov1.AgentTeam{}).
 		Owns(&karov1.AgentTask{}).
+		Watches(&karov1.AgentTask{}, handler.EnqueueRequestsFromMapFunc(taskToTeam)).
 		Complete(r)
 }

@@ -1,0 +1,4 @@
+# karo local runtime state
+.karo/
+# user secrets / config never committed
+*.local.yaml

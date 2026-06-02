@@ -1,4 +1,8 @@
-# KARO — Kubernetes Agent Runtime Orchestrator
+<p align="center">
+  <img src="docs/logo.svg" alt="KARO — Kubernetes Agent Runtime Orchestrator" width="320">
+</p>
+
+<h1 align="center">KARO — Kubernetes Agent Runtime Orchestrator</h1>
 
 > **Define your agent team once, locally, in portable config. Run it on your
 > laptop today. Push the exact same definition to Kubernetes tomorrow — no
@@ -32,7 +36,12 @@ Everything above the store layer (compiler, validator, adapters, router,
 coordinator, exporter) is shared code — that is *why* local and cluster can't
 drift.
 
+**New here?** Start with the [**usage guide**](docs/USAGE.md) (install → author →
+run → sling at one agent → human gate → export) and the runnable
+[**`examples/`**](examples/) (a Jira-integrated team you can run offline).
+
 The full design lives in [`docs/`](docs/):
+[`USAGE.md`](docs/USAGE.md) (the hands-on guide),
 [`PRD-KARO-CLI.md`](docs/PRD-KARO-CLI.md) (the CLI / local runtime),
 [`PRD-KARO-v2.md`](docs/PRD-KARO-v2.md) (the operator), and
 [`SPEC-REVIEW.md`](docs/SPEC-REVIEW.md) (the pre-build review that shaped them).
@@ -42,17 +51,23 @@ The full design lives in [`docs/`](docs/):
 ## Quickstart (local)
 
 ```bash
-# Install the shared runtime + CLI (editable, from the monorepo)
-pip install -e karo-runtime -e cli
+# Install the CLI — no clone, no build step (pipx if present, else pip):
+curl -fsSL https://raw.githubusercontent.com/joe2far/karo/main/scripts/install.sh | bash
+# (or, hacking on KARO itself, editable from the monorepo: pip install -e karo-runtime -e cli)
 
 # Scaffold a team as the folder convention (karo.yaml + agents/ + skills/ + …)
-karo init --name refactor-crew --template lead-crew
+karo init --name refactor-team --template lead-team
 
 # Static checks — no network, no model calls
 karo validate
 
 # Run it locally (omit creds and it runs in a deterministic stub mode)
 karo run -o "tidy up the logging module"
+
+# Sling a prompt straight at one agent (skip the lead's decomposition)
+karo sling reviewer "review the auth changes on JIRA-789"
+# …or at an agent in another team folder, or on a cluster (team = namespace):
+karo sling pm-team/deploy-approver "approve JIRA-789" --context kind-karo
 
 # Inspect the durable state
 karo ps
@@ -78,6 +93,7 @@ refactor-crew/
   skills/              # Claude Code-style skill dirs, reused verbatim
   tools/               # custom in-process @tool functions (auto-discovered)
   mcp/servers.yaml     # MCP server declarations
+  # karo.yaml also declares resources.repos (git repos agents work on, cloned on run)
   shared/              # reusable fragments pulled in via include:
   .karo/               # local runtime state (memory/tasks/mail) — gitignored
 ```
@@ -90,11 +106,12 @@ refactor-crew/
 
 | Command | Purpose |
 |---|---|
-| `karo init` | Scaffold a project (`--template minimal\|lead-crew\|pipeline`, `--flat`). |
+| `karo init` | Scaffold a project (`--template minimal\|lead-team\|pipeline`, `--flat`). |
 | `karo compile` | Folder → canonical `AgentTeam` (deterministic, canonicalized). |
 | `karo validate` | Static + cross-field validation (`--target local\|cluster`, `--json`). |
 | `karo doctor` | Environment readiness (harness binaries, profiles, SDK). |
-| `karo run` | Run a team locally (`-o`, `--dry-run`, `--max-turns`, `--autonomy`, `--resume`). |
+| `karo run` | Run a team locally, or sling at `[team/]agent` (`run [team/]agent "msg"`, `-o`, `--agent`, `--context`, `--dry-run`, `--resume`). |
+| `karo sling` | Fire one objective at one agent: `karo sling team/agent "msg"` (local folder, or `--context` namespace). |
 | `karo ps` | List agents and their state. |
 | `karo tasks` | `list\|show\|retry\|cancel\|assign` the durable task layer. |
 | `karo mail` | `list\|read\|send\|purge` agent mailboxes. |
@@ -143,6 +160,7 @@ docker build -f agent-runtime-image/Dockerfile -t ghcr.io/karo/agent-runtime:v2 
 - **Harness** — the execution front-end (`sdk`, `claude-code`, `cursor`, `codex`). Only `sdk` is cluster-capable; the others are local-only (portability matrix, CLI §4.7).
 - **Coordination patterns** — `lead-and-teammates`, `pipeline`, `swarm`, all on the same Coordinator primitives (durable tasks + mailbox + memory + attach/guards).
 - **Attach & direct** — every agent is a live, steerable session, not an approval queue. `karo attach` to watch, inject a turn, interrupt, or take over. **Guards** pause-and-flag an agent for attention; they are not approvals.
+- **Working repos** — agents declare the git repos they work on (`resources.repos` + per-agent `repos:`); KARO clones them into the workspace on run and sets each agent's working dir. Auth is the runner's own git config, so the team carries no credentials.
 - **Budgets** — authoritative, synchronous token accounting (atomic counter), identical locally and on cluster.
 - **Parity** — `karo export`'s spec body equals the local spec after canonicalization; this is tested against a fixture with a large integer and a block-scalar to catch YAML-portability drift.
 
@@ -166,10 +184,43 @@ CI enforces the headline invariants: the committed JSON Schema matches the
 generator, the generated Go types/CRDs are up to date, and scaffolded templates
 carry no org-specific identifiers.
 
-This is an early build — **M0 (shared foundation)** plus a working slice of
-**M1** (single-agent SDK run, file stores, budget meter, attach/guard hooks).
+### Status & what's outstanding
+
+Done and tested: **M0** (shared foundation), **M1** (single-agent SDK run, file
+stores, budget meter, attach/`pauseBefore` guard), **M2** (Coordinator: durable
+tasks + mailbox + lead-and-teammates, atomic claim, resume, `karo tasks/mail/
+memory`), and a working slice of **M3/M4**: direct dispatch + `karo sling
+[team/]agent "msg"` (local folders *and* cluster namespaces via `--context`),
+per-provider budgets, the provider-agnostic model router, **git working repos**
+(`resources.repos` + per-agent `repos:`, cloned into the workspace on run),
+prompt-from-file (`-f`/`@file`), and an explicit `coordination.reviewer` field.
+**Parity Checkpoint A passes** in CI across file *and* real Postgres; the operator
+builds/vets/tests green (envtest) with the same spec.
+
+Outstanding for a complete solution:
+
+- **M3 — runtime depth:** real Bedrock/Vertex API integration in the SDK adapter
+  (router + budgets already provider-agnostic); **model-driven** decomposition
+  (today's lead decomposition is deterministic — one task per teammate);
+  **mailbox-driven** coordination (inboxes are recorded, not yet consumed to
+  drive dialogue); full PTY attach for the local-only Cursor/Codex harnesses.
+- **Operator (cluster) M3 — scale-from-zero + claim loop:** *done and envtest-tested.*
+  The `AgentTeam` reconciler watches `AgentTask` projections and sets per-agent
+  replicas — a task (e.g. from `karo sling … --context`) wakes its owner **and**
+  the lead; a guard-paused task keeps its agent up; terminal work scales back to
+  zero. The agent pod now runs a long-lived **claim loop** (`Coordinator.serve`)
+  instead of single-shot, so a teammate that starts before the lead plans still
+  picks up its task. *Remaining connective tissue:* syncing the `AgentTask`
+  projection with the authoritative Postgres tasks store so the reconciler reacts
+  to real run state (today the projection is the signal), plus mailbox-stream
+  routing.
+- **M4 — polish:** `karo export` round-trip hardening, remote `karo attach
+  --context` *streaming* against a live cluster, OTel/metrics + gVisor + EKS/GKE
+  validation, and **published pipx/PyPI packaging** (install is no-build today,
+  but not yet on a public index).
+
 See the milestone tables in `docs/PRD-KARO-CLI.md` §18 and `docs/PRD-KARO-v2.md`
-§14 for what's next.
+§14, and the adversarial M2 review in [`review/07-m2-verdict.md`](review/07-m2-verdict.md).
 
 ## License
 

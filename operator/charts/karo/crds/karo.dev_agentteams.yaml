@@ -147,6 +147,10 @@ spec:
                       - plan
                       - bypass
                       type: string
+                    repos:
+                      items:
+                        type: string
+                      type: array
                     skills:
                       items:
                         type: string
@@ -221,6 +225,8 @@ spec:
                           type: string
                         type: array
                     type: object
+                  reviewer:
+                    type: string
                   taskLayer:
                     description: TaskLayer configures the durable task store (CLI
                       §4.2 / §11).
@@ -346,8 +352,8 @@ spec:
                     type: string
                 type: object
               resources:
-                description: Resources are the shared tools, skills and MCP servers
-                  (CLI §4.2 / §9).
+                description: Resources are the shared tools, skills, MCP servers and
+                  repos (CLI §4.2 / §9).
                 properties:
                   mcpServers:
                     items:
@@ -377,6 +383,25 @@ spec:
                           type: string
                       required:
                       - name
+                      type: object
+                    type: array
+                  repos:
+                    items:
+                      description: |-
+                        Repo is a git repository an agent works on (CLI §9). Cloned by the agent
+                        pod's init-container from this spec; agents reference it by name.
+                      properties:
+                        name:
+                          type: string
+                        path:
+                          type: string
+                        ref:
+                          type: string
+                        url:
+                          type: string
+                      required:
+                      - name
+                      - url
                       type: object
                     type: array
                   skills:

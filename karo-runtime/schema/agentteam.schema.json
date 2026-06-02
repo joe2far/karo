@@ -97,6 +97,13 @@
           ],
           "default": null
         },
+        "repos": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Repos",
+          "type": "array"
+        },
         "skills": {
           "items": {
             "type": "string"
@@ -312,6 +319,18 @@
             }
           ],
           "default": null
+        },
+        "reviewer": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reviewer"
         },
         "taskLayer": {
           "$ref": "#/$defs/TaskLayer"
@@ -671,6 +690,50 @@
       "title": "Provider",
       "type": "string"
     },
+    "Repo": {
+      "additionalProperties": false,
+      "description": "A git repository an agent works on (\u00a79).\n\nDeclared once under ``resources.repos`` and referenced by name from an\nagent's ``repos:`` list. Locally the CLI clones/checks it out into the\nworkspace before a run; on cluster the agent pod's init-container does the\nsame from the same spec. ``ref`` is a branch, tag, or commit SHA (default:\nthe remote's default branch). ``path`` overrides the checkout location\n(default ``<workingDir>/<name>``).",
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Path"
+        },
+        "ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ref"
+        },
+        "url": {
+          "title": "Url",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "url"
+      ],
+      "title": "Repo",
+      "type": "object"
+    },
     "Resources": {
       "additionalProperties": false,
       "properties": {
@@ -679,6 +742,13 @@
             "$ref": "#/$defs/McpServer"
           },
           "title": "Mcpservers",
+          "type": "array"
+        },
+        "repos": {
+          "items": {
+            "$ref": "#/$defs/Repo"
+          },
+          "title": "Repos",
           "type": "array"
         },
         "skills": {

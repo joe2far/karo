@@ -21,8 +21,12 @@ type Dispatcher struct {
 
 // Run starts the dispatch loop until ctx is cancelled.
 func (d *Dispatcher) Run(ctx context.Context) error {
-	// TODO(v2-M2): claim ready tasks atomically (FOR UPDATE SKIP LOCKED),
-	// request pods for zero-scaled agents, route mailbox streams, emit events.
+	// Scale-from-zero (waking the owner + lead on claimable work) now lives in the
+	// AgentTeamReconciler, which watches AgentTask projections and sets per-agent
+	// replicas (v2 §5.1); atomic task claiming is done pod-side against Postgres
+	// (FOR UPDATE SKIP LOCKED). What remains for this component: keeping the
+	// AgentTask projection in sync with the Postgres tasks store (so the reconciler
+	// sees real state) and mailbox-stream routing / event emission.
 	<-ctx.Done()
 	return ctx.Err()
 }
