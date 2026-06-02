@@ -48,6 +48,9 @@ class Task:
     attempts: int = 0
     lease: Optional[float] = None
     attached_by: Optional[str] = None
+    # Set once a pauseBefore guard has been satisfied (via attach/continue) so the
+    # task is not re-paused on resume; persisted so resume across processes works.
+    guard_released: bool = False
     result: Optional[dict[str, Any]] = None
     id: str = field(default_factory=lambda: _id("task"))
     created: float = field(default_factory=_now)

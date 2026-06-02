@@ -136,6 +136,10 @@ class Coordinator:
             skills=agent.skills,
             working_dir=defaults.working_dir,
             permission_mode=(agent.permission_mode or defaults.permission_mode),
+            # Accessors the adapter/attach session use (CLI §6.2).
+            memory=self.memory,
+            mailbox=self.mail,
+            budget=self.budget,
         )
 
     def _harness_for(self, agent_name: str) -> str:
@@ -176,6 +180,17 @@ class Coordinator:
 
             owner = task.owner or await self._assign_swarm(task)
             ctx = self._context(owner)
+
+            # Guard: pauseBefore — pause before acting and await human attach
+            # (supervised only). Released by `karo attach`/continue (§13).
+            pb = self._pause_before(owner)
+            if pb and not task.guard_released and self._autonomy(owner) != Autonomy.autonomous.value:
+                await self._transition(task, TaskState.paused.value)
+                paused.append(owner)
+                self.events.emit(EventType.guard_pause.value, agent=owner,
+                                 guard=f"pauseBefore:{','.join(pb)}",
+                                 reason=f"pauseBefore:{','.join(pb)}")
+                continue
 
             # Authoritative budget gate before the turn (§8).
             est = max(1, len(ctx.instructions + task.objective) // 4)
@@ -236,6 +251,37 @@ class Coordinator:
             halted=halted, halt_reason=halt_reason,
             paused_agents=sorted(set(paused)),
         )
+
+    def _pause_before(self, agent_name: str) -> list[str]:
+        """Tool names that should pause the agent before invocation (§13)."""
+        tools: list[str] = []
+        for g in self._guards(agent_name):
+            if g.pause_before:
+                tools.extend(g.pause_before)
+        return tools
+
+    # -- attach & direct (§13) ------------------------------------------- #
+    async def open_attach(self, agent_name: str):
+        """Open a live attach session to an agent (stream+inject+interrupt+detach)."""
+        ctx = self._context(agent_name)
+        adapter = get_adapter(self._harness_for(agent_name), dry_run=self.dry_run)
+        self.events.emit(EventType.attach.value, agent=agent_name, user="local")
+        return await adapter.attach(ctx)
+
+    async def release_paused(self, agent: Optional[str] = None) -> list[str]:
+        """Release guard-paused tasks back to pending so the next run continues.
+
+        Used by `karo attach ... --continue`. Marks ``guard_released`` so the
+        pauseBefore guard does not re-trip (persisted for cross-process resume).
+        """
+        released: list[str] = []
+        for t in await self.tasks.list(state=TaskState.paused.value):
+            if agent and t.owner != agent:
+                continue
+            t.guard_released = True
+            await self._transition(t, TaskState.pending.value)
+            released.append(t.id)
+        return released
 
     def _should_pause_on(self, agent: str, event: str) -> bool:
         if self._autonomy(agent) == Autonomy.autonomous.value:

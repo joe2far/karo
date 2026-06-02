@@ -62,17 +62,43 @@ class AgentContext:
 
 
 class AttachSession:
-    """A live attach handle: stream + inject + interrupt + detach (CLI §13)."""
+    """A live attach handle: stream + inject + interrupt + detach (CLI §13).
 
-    def __init__(self, ctx: AgentContext):
+    Locally this is an in-process session over the same adapter the Coordinator
+    drives; on cluster the operator wraps the identical verbs over a streamed
+    transport (websocket/SPDY) to the agent pod (v2 §7). Injecting feeds a user
+    turn into the agent loop; the running turn can be interrupted; detaching
+    hands control back to the Coordinator.
+    """
+
+    def __init__(self, adapter: "HarnessAdapter", ctx: AgentContext):
+        self.adapter = adapter
         self.ctx = ctx
         self.detached = False
+        self.interrupted = False
+        self.injected: list[str] = []
+        self.transcript: list[Event] = []
 
-    async def inject(self, body: str) -> None:  # pragma: no cover - transport-specific
-        raise NotImplementedError
+    async def inject(self, body: str) -> TurnResult:
+        """Inject a human user-turn into the agent loop and capture the reply."""
+        if self.detached:
+            raise RuntimeError("cannot inject on a detached session")
+        self.interrupted = False
+        self.injected.append(body)
+        self.transcript.append(Event(type="human.inject", data={"body": body}))
+        result = await self.adapter.run_turn(self.ctx, Message("user", body))
+        self.transcript.append(Event(type="turn.delta", data={"text": result.text}))
+        return result
 
-    async def interrupt(self) -> None:  # pragma: no cover
-        raise NotImplementedError
+    async def interrupt(self) -> None:
+        """Interrupt the current turn (stop generation)."""
+        self.interrupted = True
+        await self.adapter.interrupt()
+
+    async def stream(self) -> AsyncIterator[Event]:
+        """Replay the live session transcript (watch the stream)."""
+        for event in self.transcript:
+            yield event
 
     def detach(self) -> None:
         self.detached = True

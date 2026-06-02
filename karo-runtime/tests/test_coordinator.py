@@ -100,6 +100,78 @@ spec:
     assert any(t.state == "paused" for t in res.tasks)
 
 
+async def test_pause_before_guard_pauses_then_continues(tmp_path: Path):
+    """pauseBefore pauses a supervised agent before acting; --continue releases it."""
+    team = _flat(tmp_path, """\
+metadata: { name: t }
+spec:
+  defaults: { permissionMode: bypass }
+  coordination: { pattern: swarm }
+  interaction:
+    autonomy: supervised
+    guards: [{ pauseBefore: [Bash] }]
+  agents: [{ name: a, harness: sdk }]
+""")
+    coord = Coordinator(team, project_dir=tmp_path, dry_run=False)
+    res = await coord.run("obj")
+    assert "a" in res.paused_agents
+    assert any(t.state == "paused" for t in res.tasks)
+
+    # Attach + continue releases the guard; a resumed run completes.
+    released = await coord.release_paused("a")
+    assert released
+    coord2 = Coordinator(team, project_dir=tmp_path, dry_run=False, run_id=coord.run_id)
+    res2 = await coord2.run("obj")
+    assert res2.completed
+
+
+async def test_pause_before_ignored_when_autonomous(tmp_path: Path):
+    team = _flat(tmp_path, """\
+metadata: { name: t }
+spec:
+  defaults: { permissionMode: bypass }
+  coordination: { pattern: swarm }
+  interaction:
+    autonomy: autonomous
+    guards: [{ pauseBefore: [Bash] }]
+  agents: [{ name: a, harness: sdk }]
+""")
+    coord = Coordinator(team, project_dir=tmp_path, dry_run=False)
+    res = await coord.run("obj")
+    assert res.completed  # autonomous never pauses for humans
+
+
+async def test_attach_session_inject_interrupt_detach(lead_crew: Path):
+    """The attach seam is real: stream + inject + interrupt + detach (§6.2/§13)."""
+    team = compile_folder(lead_crew).team
+    coord = Coordinator(team, project_dir=lead_crew, dry_run=True)
+    session = await coord.open_attach("planner")
+
+    turn = await session.inject("focus on the API first")
+    assert turn.text  # the adapter produced a reply
+    assert session.injected == ["focus on the API first"]
+
+    events = [e async for e in session.stream()]
+    assert any(e.type == "human.inject" for e in events)
+    assert any(e.type == "turn.delta" for e in events)
+
+    await session.interrupt()
+    assert session.interrupted is True
+
+    session.detach()
+    assert session.detached is True
+
+
+async def test_context_accessors_injected(lead_crew: Path):
+    """AgentContext carries memory/mailbox/budget accessors (§6.2)."""
+    team = compile_folder(lead_crew).team
+    coord = Coordinator(team, project_dir=lead_crew, dry_run=True)
+    ctx = coord._context("planner")
+    assert ctx.memory is coord.memory
+    assert ctx.mailbox is coord.mail
+    assert ctx.budget is coord.budget
+
+
 async def test_budget_hardstop_halts(tmp_path: Path):
     team = _flat(tmp_path, """\
 metadata: { name: t }

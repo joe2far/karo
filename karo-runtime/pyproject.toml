@@ -17,6 +17,11 @@ dependencies = [
 
 [project.optional-dependencies]
 sdk = ["claude-agent-sdk>=0.1.0"]
+anthropic = ["anthropic>=0.40"]
+# Cluster backends (operator lane). The base package stays lean; these are
+# imported lazily so `import karo_runtime` works without them installed.
+redis = ["redis>=5.0"]
+postgres = ["asyncpg>=0.29"]
 dev = ["pytest>=8.0", "pytest-asyncio>=0.23"]
 
 [tool.setuptools.packages.find]
