@@ -63,10 +63,10 @@ func (r *AgentTeamReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		}
 	}
 
-	// 7. Update status.
-	if team.Status.Phase == "" {
-		team.Status.Phase = "Running"
-	}
+	// 7. Update status. Until agents are actually provisioned the team is
+	//    Pending (the M0 acceptance bar: apply sample → Pending); once the
+	//    Dispatcher has live agent pods it is Running (v2 §3.1 phase set).
+	team.Status.Phase = phaseFor(team.Status.ActiveAgents)
 	team.Status.ObservedGeneration = team.Generation
 	r.setCondition(&team, "Ready", metav1.ConditionTrue, "Reconciled", "team reconciled")
 	if err := r.Status().Update(ctx, &team); err != nil {
@@ -85,6 +85,24 @@ func validateTeam(team *karov1.AgentTeam) string {
 	if len(team.Spec.Agents) == 0 {
 		return "spec.agents must contain at least one agent"
 	}
+	// Cross-field rules (CLI §4.3), mirrored from karo-runtime's validate.py so the
+	// operator agrees with `karo validate`. The CRD's XValidation enforces the
+	// coordination shape rules too; these give actionable messages + cover the
+	// prompt+autonomous rule which spans defaults/interaction/agents.
+	pattern := team.Spec.Coordination.Pattern
+	if pattern == "" {
+		pattern = "lead-and-teammates"
+	}
+	switch pattern {
+	case "lead-and-teammates":
+		if team.Spec.Coordination.Lead == "" {
+			return "coordination.lead is required when pattern is 'lead-and-teammates'"
+		}
+	case "pipeline":
+		if team.Spec.Coordination.Pipeline == nil || len(team.Spec.Coordination.Pipeline.Stages) == 0 {
+			return "coordination.pipeline.stages is required when pattern is 'pipeline'"
+		}
+	}
 	for _, a := range team.Spec.Agents {
 		harness := a.Harness
 		if harness == "" {
@@ -96,8 +114,34 @@ func validateTeam(team *karov1.AgentTeam) string {
 		if !slices.Contains(clusterCapableHarnesses, harness) {
 			return fmt.Sprintf("agent %q: harness %q is local-only and cannot run on cluster (CLI §4.7)", a.Name, harness)
 		}
+		// prompt + autonomous is invalid headless: an unattended agent cannot
+		// block on an interactive prompt (CLI §4.2.1).
+		pm := a.PermissionMode
+		if pm == "" {
+			pm = team.Spec.Defaults.PermissionMode
+		}
+		autonomy := ""
+		if a.Interaction != nil {
+			autonomy = a.Interaction.Autonomy
+		}
+		if autonomy == "" {
+			autonomy = team.Spec.Interaction.Autonomy
+		}
+		if pm == "prompt" && autonomy == "autonomous" {
+			return fmt.Sprintf("agent %q: permissionMode 'prompt' with autonomy 'autonomous' is invalid (no interactive surface) (CLI §4.2.1)", a.Name)
+		}
 	}
 	return ""
+}
+
+// phaseFor maps the number of live agent pods to the team phase. With no
+// provisioned agents yet (scale-to-zero, or pre-Dispatcher M0), the team is
+// Pending — the M0 acceptance bar (v2 §14: apply sample → Pending).
+func phaseFor(activeAgents int) string {
+	if activeAgents > 0 {
+		return "Running"
+	}
+	return "Pending"
 }
 
 func countActiveAgents(team *karov1.AgentTeam) int {

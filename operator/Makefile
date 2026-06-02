@@ -9,7 +9,7 @@ all: build
 
 .PHONY: manifests
 manifests: ## Generate CRDs + RBAC.
-	$(CONTROLLER_GEN) crd rbac:roleName=karo-manager-role paths=./... \
+	$(CONTROLLER_GEN) crd:allowDangerousTypes=true rbac:roleName=karo-manager-role paths=./... \
 		output:crd:dir=./config/crd output:rbac:dir=./config/rbac
 
 .PHONY: generate
