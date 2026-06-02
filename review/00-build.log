@@ -391,3 +391,18 @@ ok  	github.com/joe2far/karo/operator/internal/controller	(cached)
 0 issues.
 == controller-gen drift vs committed ==
 PASS (in sync)
+######## M2 FULL-REPO GATE  Tue Jun  2 01:30:48 UTC 2026 ########
+== ruff ==
+All checks passed!
+OK
+== pytest karo-runtime ==
+62 passed, 9 skipped in 0.43s
+== pytest cli ==
+11 passed in 0.35s
+== go test (with envtest) ==
+ok  	github.com/joe2far/karo/operator/api/v1	(cached)
+ok  	github.com/joe2far/karo/operator/internal/controller	(cached)
+== golangci-lint ==
+0 issues.
+== controller-gen drift ==
+PASS in sync

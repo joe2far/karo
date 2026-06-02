@@ -24,10 +24,38 @@ const (
 	// runIDAnnotation optionally carries the run a provisioned pod participates
 	// in; surfaced as KARO_RUN_ID (v2 §4.1).
 	runIDAnnotation = "karo.dev/run-id"
+	// objectiveAnnotation carries the objective to drive the team with; surfaced
+	// as KARO_OBJECTIVE so the agent pods' Coordinator loop has work (v2 §4.1).
+	objectiveAnnotation = "karo.dev/objective"
+	// teamSpecMount is where the projected full team spec is mounted.
+	teamSpecMount = "/etc/karo/team.json"
 
 	labelTeam  = "karo.dev/team"
 	labelAgent = "karo.dev/agent"
 )
+
+// teamConfigMapName is the single per-team spec ConfigMap mounted into every
+// agent pod (the full compiled AgentTeam the shared karo-runtime compiler loads).
+func teamConfigMapName(team *karov1.AgentTeam) string {
+	return team.Name + "-spec"
+}
+
+// teamDocJSON projects the full AgentTeam as a document the shared karo-runtime
+// compiler (`compile_flat`) can load: apiVersion/kind/metadata/spec. The
+// operator-only `runtime` block is omitted — it is not part of the shared spec
+// the Python compiler models (v2 §3.1 / CLI §4.2).
+func teamDocJSON(team *karov1.AgentTeam) (string, error) {
+	spec := team.Spec
+	spec.Runtime = nil
+	doc := map[string]interface{}{
+		"apiVersion": "karo.dev/v1",
+		"kind":       "AgentTeam",
+		"metadata":   map[string]interface{}{"name": team.Name},
+		"spec":       spec,
+	}
+	b, err := json.Marshal(doc)
+	return string(b), err
+}
 
 // workloadName is the deterministic per-agent workload name (<team>-<agent>).
 func workloadName(team *karov1.AgentTeam, agent karov1.Agent) string {
@@ -103,7 +131,8 @@ func agentEnv(team *karov1.AgentTeam, agent karov1.Agent) []corev1.EnvVar {
 		{Name: "KARO_TEAM", Value: team.Name},
 		{Name: "KARO_AGENT", Value: agent.Name},
 		{Name: "KARO_RUN_ID", Value: team.Annotations[runIDAnnotation]},
-		{Name: "KARO_SPEC_PATH", Value: "/etc/karo/agent.json"},
+		{Name: "KARO_SPEC_PATH", Value: teamSpecMount},
+		{Name: "KARO_OBJECTIVE", Value: team.Annotations[objectiveAnnotation]},
 	}
 	if ep := otelEndpoint(team); ep != "" {
 		env = append(env, corev1.EnvVar{Name: "KARO_OTEL_ENDPOINT", Value: ep})
@@ -127,22 +156,23 @@ func agentEnv(team *karov1.AgentTeam, agent karov1.Agent) []corev1.EnvVar {
 	return env
 }
 
-// agentConfigMap projects the agent's slice of the spec for the pod to load
-// (mounted at /etc/karo/agent.json by the Deployment). Orchestration only — the
-// data is the compiled agent struct, no reasoning logic (v2 §4.1, §12).
-func agentConfigMap(team *karov1.AgentTeam, agent karov1.Agent) *corev1.ConfigMap {
-	cm := &corev1.ConfigMap{
+// teamConfigMap projects the full compiled team for the pods to load (mounted at
+// /etc/karo/team.json). Every agent pod mounts the same ConfigMap and runs the
+// karo-runtime Coordinator scoped to its own agent. Orchestration only — the data
+// is the compiled spec, no reasoning logic (v2 §4.1, §12).
+func teamConfigMap(team *karov1.AgentTeam) (*corev1.ConfigMap, error) {
+	doc, err := teamDocJSON(team)
+	if err != nil {
+		return nil, err
+	}
+	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      workloadName(team, agent) + "-spec",
+			Name:      teamConfigMapName(team),
 			Namespace: team.Namespace,
-			Labels:    agentLabels(team, agent),
+			Labels:    map[string]string{labelTeam: team.Name},
 		},
-		Data: map[string]string{"team": team.Name},
-	}
-	if b, err := json.Marshal(agent); err == nil {
-		cm.Data["agent.json"] = string(b)
-	}
-	return cm
+		Data: map[string]string{"team": team.Name, "team.json": doc},
+	}, nil
 }
 
 // agentDeployment builds the per-agent Deployment running the agent-runtime
@@ -197,7 +227,7 @@ func agentDeployment(team *karov1.AgentTeam, agent karov1.Agent) *appsv1.Deploym
 						VolumeSource: corev1.VolumeSource{
 							ConfigMap: &corev1.ConfigMapVolumeSource{
 								LocalObjectReference: corev1.LocalObjectReference{
-									Name: workloadName(team, agent) + "-spec",
+									Name: teamConfigMapName(team),
 								},
 							},
 						},
@@ -214,17 +244,22 @@ func agentDeployment(team *karov1.AgentTeam, agent karov1.Agent) *appsv1.Deploym
 // (v2 §5.4). Orchestration only; no agent reasoning (v2 §12).
 func (r *AgentTeamReconciler) provisionAgents(ctx context.Context, team *karov1.AgentTeam) (int, error) {
 	active := 0
-	for _, agent := range team.Spec.Agents {
-		cm := agentConfigMap(team, agent)
-		desiredCM := cm.DeepCopy()
-		if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, cm, func() error {
-			cm.Data = desiredCM.Data
-			cm.Labels = desiredCM.Labels
-			return controllerutil.SetControllerReference(team, cm, r.Scheme)
-		}); err != nil {
-			return active, fmt.Errorf("configmap for agent %q: %w", agent.Name, err)
-		}
 
+	// One per-team spec ConfigMap mounted into every agent pod.
+	teamCM, err := teamConfigMap(team)
+	if err != nil {
+		return active, fmt.Errorf("project team spec: %w", err)
+	}
+	desiredCM := teamCM.DeepCopy()
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, teamCM, func() error {
+		teamCM.Data = desiredCM.Data
+		teamCM.Labels = desiredCM.Labels
+		return controllerutil.SetControllerReference(team, teamCM, r.Scheme)
+	}); err != nil {
+		return active, fmt.Errorf("team configmap: %w", err)
+	}
+
+	for _, agent := range team.Spec.Agents {
 		dep := agentDeployment(team, agent)
 		desired := dep.Spec.DeepCopy()
 		if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, dep, func() error {

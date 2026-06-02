@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"strings"
 	"testing"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -61,17 +62,17 @@ func TestReconcileProvisionsScaleToZeroTeam(t *testing.T) {
 		t.Fatalf("activeAgents = %d, want 0", got.Status.ActiveAgents)
 	}
 
-	// ConfigMap <team>-<agent>-spec exists.
+	// Per-team spec ConfigMap <team>-spec exists with the full compiled team.
 	var cm corev1.ConfigMap
-	cmKey := types.NamespacedName{Namespace: ns, Name: "alpha-lead-spec"}
+	cmKey := types.NamespacedName{Namespace: ns, Name: "alpha-spec"}
 	if err := testClient.Get(ctx, cmKey, &cm); err != nil {
-		t.Fatalf("get agent ConfigMap: %v", err)
+		t.Fatalf("get team ConfigMap: %v", err)
 	}
 	if cm.Data["team"] != "alpha" {
 		t.Fatalf("configmap team = %q, want alpha", cm.Data["team"])
 	}
-	if _, ok := cm.Data["agent.json"]; !ok {
-		t.Fatalf("configmap missing agent.json")
+	if doc, ok := cm.Data["team.json"]; !ok || !strings.Contains(doc, "\"karo.dev/v1\"") {
+		t.Fatalf("configmap missing/invalid team.json: %q", cm.Data["team.json"])
 	}
 
 	// Deployment <team>-<agent> exists with replicas 0.
