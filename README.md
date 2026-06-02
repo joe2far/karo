@@ -65,7 +65,9 @@ karo validate
 karo run -o "tidy up the logging module"
 
 # Sling a prompt straight at one agent (skip the lead's decomposition)
-karo run --agent reviewer -o "review the auth changes on JIRA-789"
+karo sling reviewer "review the auth changes on JIRA-789"
+# …or at an agent in another team folder, or on a cluster (team = namespace):
+karo sling pm-team/deploy-approver "approve JIRA-789" --context kind-karo
 
 # Inspect the durable state
 karo ps
@@ -107,7 +109,8 @@ refactor-crew/
 | `karo compile` | Folder → canonical `AgentTeam` (deterministic, canonicalized). |
 | `karo validate` | Static + cross-field validation (`--target local\|cluster`, `--json`). |
 | `karo doctor` | Environment readiness (harness binaries, profiles, SDK). |
-| `karo run` | Run a team locally (`-o`, `--agent`, `--dry-run`, `--max-turns`, `--autonomy`, `--resume`). |
+| `karo run` | Run a team locally, or sling at `[team/]agent` (`run [team/]agent "msg"`, `-o`, `--agent`, `--context`, `--dry-run`, `--resume`). |
+| `karo sling` | Fire one objective at one agent: `karo sling team/agent "msg"` (local folder, or `--context` namespace). |
 | `karo ps` | List agents and their state. |
 | `karo tasks` | `list\|show\|retry\|cancel\|assign` the durable task layer. |
 | `karo mail` | `list\|read\|send\|purge` agent mailboxes. |
@@ -198,10 +201,12 @@ Outstanding for a complete solution:
   `name == "reviewer"` convention).
 - **Operator (cluster) M3:** on-demand **scale-from-zero** (provision the lead
   pod on objective arrival, wake teammates when claimable work exists) and a
-  long-lived pod **claim loop** (today a pod runs `run()` once and exits).
+  long-lived pod **claim loop** (today a pod runs `run()` once and exits). This
+  is what makes `karo sling … --context` (which creates the `AgentTask`) actually
+  *run* on an idle team rather than leaving it `pending`.
 - **M4 — export + polish:** `karo export` round-trip hardening, pipeline/swarm
-  ergonomics, remote `karo attach --context` against a live cluster, and
-  published **pipx/PyPI packaging**.
+  ergonomics, remote `karo attach --context` streaming against a live cluster,
+  and published **pipx/PyPI packaging**.
 
 See the milestone tables in `docs/PRD-KARO-CLI.md` §18 and `docs/PRD-KARO-v2.md`
 §14, and the adversarial M2 review in [`review/07-m2-verdict.md`](review/07-m2-verdict.md).

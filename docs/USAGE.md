@@ -125,19 +125,32 @@ Useful flags:
 | `--resume <run-id>` | continue a persisted run |
 | `--json` | machine-readable result |
 
-### 3b. Sling a prompt straight at one agent: `karo run --agent`
+### 3b. Sling a prompt straight at one agent
 
 When you don't want the lead to decompose anything — you want **this prompt, on
-this agent, now** — target it directly. This is the local equivalent of "fire a
-task at a specific teammate":
+this agent, now** — target it directly. Three equivalent ways:
 
 ```bash
-karo run --agent reviewer -o "review the auth changes on JIRA-789"
+karo sling reviewer "review the auth changes on JIRA-789"   # v1-style verb
+karo run reviewer "review the auth changes on JIRA-789"     # positional target + message
+karo run --agent reviewer -o "review the auth changes …"    # explicit flags
 ```
 
-This creates a **single task owned by `reviewer`** and drives only that agent —
-no planner decomposition, no synthesis. The agent's own model, tools, MCP
+All three create a **single task owned by `reviewer`** and drive only that agent
+— no planner decomposition, no synthesis. The agent's own model, tools, MCP
 servers, skills, guards, and autonomy all still apply.
+
+`karo run`'s positional grammar is:
+
+| You type | Means |
+|---|---|
+| `karo run "objective"` | whole team (objective is positional — no `-o` needed) |
+| `karo run agent "msg"` | one agent in the current project |
+| `karo run team/agent "msg"` | one agent in the team folder `team/` (see §3c) |
+| `karo run -o "objective"` | whole team (explicit flag, back-compat) |
+
+`karo sling` is the same thing with the target **required**, so there's never any
+ambiguity — use it when you specifically mean "fire at one agent."
 
 If you name an agent that isn't on the team, you get a helpful error:
 
@@ -148,6 +161,47 @@ error: unknown agent 'ghost'; team has: planner, implementer, reviewer
 > **This is the pattern for "an agent with a Jira MCP + an approve-deploy skill,
 > fired off with a specific comment".** See [§7](#7-worked-example-fire-a-deploy-approval-at-one-agent)
 > and the runnable [`examples/pm-team/`](../examples/pm-team/).
+
+### 3c. Multiple teams: addressing one by name
+
+A **team is a folder**. When you keep several team folders side by side, you can
+address one by name with `team/agent` — KARO resolves `<team>` to a folder by
+looking (in order) for a `karo.yaml` at: the name as a path, `./<team>`,
+`./teams/<team>`, and a sibling `../<team>`.
+
+```
+workspace/
+  teams/
+    pm-team/   karo.yaml + agents/ …
+    dev-team/  karo.yaml + agents/ …
+```
+
+```bash
+cd workspace
+karo sling pm-team/deploy-approver "approve JIRA-789"
+karo sling dev-team/implementer    "refactor the method in repos"
+```
+
+No team part = the current project (`-p`, default cwd). For a one-off, point at a
+folder explicitly: `karo -p ./some/team run agent "msg"`.
+
+### 3d. Slinging at a team on a cluster: `--context`
+
+The exact same grammar works against a **KARO v2 cluster**, where a team is a
+**namespace**. Add `--context <kubecontext>` and `<team>` is read as the
+namespace; KARO creates an `AgentTask` in it (via `kubectl`) for the operator to
+run:
+
+```bash
+karo sling pm-team/deploy-approver "approve JIRA-789" --context kind-karo
+# → created AgentTask karo-sling-deploy-approver-… in namespace pm-team
+# watch:  kubectl --context kind-karo -n pm-team get agenttasks -w
+```
+
+Use `--dry-run` to print the `AgentTask` manifest without applying it. This needs
+the KARO v2 operator installed and the team deployed to that namespace (via
+`karo export` + `kubectl apply`, §8). Scale-from-zero is an operator roadmap item,
+so a fully idle team may leave the task `pending` until a pod claims it.
 
 ---
 
@@ -307,3 +361,37 @@ kubectl apply -f team-manifest.yaml      # requires the KARO v2 operator
 tested CI invariant. Local-only harnesses (`cursor`, `codex`, `claude-code`) are
 rejected for the cluster unless you pass `--allow-local-harness`; only `sdk` is
 cluster-capable.
+
+---
+
+## 9. Sharing a team with colleagues (without your creds or state)
+
+The folder **is** the shareable artifact — and it's designed so nothing personal
+travels with it:
+
+- **Commit the folder to git** (`karo.yaml`, `agents/`, `skills/`, `tools/`,
+  `mcp/`). A colleague clones it and runs `karo run` — that's the whole handoff.
+- **Your run state never travels.** `.karo/` (tasks, mailboxes, memory, token
+  usage) is gitignored by the scaffold. Each person gets their own local state.
+- **Your credentials never travel.** Model and MCP secrets are `${env:…}` /
+  `${secret:…}` *references*, never values. Your colleague sets their **own**
+  `ANTHROPIC_API_KEY` (their own Claude) and their own `JIRA_API_TOKEN`, and the
+  identical spec runs for them. `karo export --strip-secrets` (the default) emits
+  references only — nothing sensitive lands in a manifest either.
+
+So the sharing flow is just:
+
+```bash
+# you
+git add my-team && git commit -m "share the team" && git push
+
+# your colleague
+git clone … && cd my-team
+export ANTHROPIC_API_KEY=…        # their own creds
+karo validate
+karo run -o "…"                   # runs in their Claude, with their state
+```
+
+This is why KARO v1's `TeamBinding` (a name→credentials mapping CRD) is **gone in
+v2**: the team is self-contained, and credentials bind at run time from the
+environment of whoever runs it. Multiple teams just means multiple folders (§3c).

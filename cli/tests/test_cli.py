@@ -92,6 +92,59 @@ def test_full_run_then_inspect(tmp_path: Path):
     assert tasks and all(t["state"] == "done" for t in tasks)
 
 
+def test_run_positional_objective(tmp_path: Path):
+    """`karo run "objective"` (positional) runs the whole team."""
+    _init(tmp_path)
+    res = runner.invoke(app, ["-p", str(tmp_path), "run", "fix the bug"])
+    assert res.exit_code == 0, res.output
+    assert "completed" in res.output
+
+
+def test_run_positional_target_and_message(tmp_path: Path):
+    """`karo run <agent> "msg"` dispatches a single task to that agent."""
+    _init(tmp_path)
+    res = runner.invoke(app, ["-p", str(tmp_path), "--json", "run", "reviewer", "review the change"])
+    assert res.exit_code == 0, res.output
+    data = json.loads(res.output)
+    assert {t["owner"] for t in data["tasks"]} == {"reviewer"}
+
+
+def test_sling_targets_single_agent(tmp_path: Path):
+    """`karo sling <agent> "msg"` is sugar for run with a required target."""
+    _init(tmp_path)
+    res = runner.invoke(app, ["-p", str(tmp_path), "--json", "sling", "implementer", "do the thing"])
+    assert res.exit_code == 0, res.output
+    data = json.loads(res.output)
+    assert {t["owner"] for t in data["tasks"]} == {"implementer"}
+
+
+def test_run_team_name_resolves_folder(tmp_path: Path):
+    """`karo run <team>/<agent> "msg"` resolves <team> to a sibling folder by name."""
+    runner.invoke(app, ["-p", str(tmp_path / "squad"), "init", "--name", "squad", "--template", "lead-team"])
+    res = runner.invoke(app, ["-p", str(tmp_path), "--json", "run", "squad/reviewer", "review it"])
+    assert res.exit_code == 0, res.output
+    data = json.loads(res.output)
+    assert {t["owner"] for t in data["tasks"]} == {"reviewer"}
+
+
+def test_sling_cluster_dry_run_renders_agenttask(tmp_path: Path):
+    """`karo sling <team>/<agent> "msg" --context … --dry-run` renders an AgentTask
+    (team = namespace), no kubectl required."""
+    res = runner.invoke(app, ["sling", "pm-team/deploy-approver", "approve X",
+                              "--context", "kind-karo", "--dry-run"])
+    assert res.exit_code == 0, res.output
+    assert "kind: AgentTask" in res.output
+    assert "namespace: pm-team" in res.output
+    assert "owner: deploy-approver" in res.output
+
+
+def test_run_cluster_requires_team(tmp_path: Path):
+    """A bare agent with --context is rejected (team = namespace is required)."""
+    res = runner.invoke(app, ["run", "reviewer", "x", "--context", "c"])
+    assert res.exit_code != 0
+    assert "team = namespace" in res.output
+
+
 def test_export_yaml(tmp_path: Path):
     _init(tmp_path)
     out = tmp_path / "manifest.yaml"

@@ -8,7 +8,10 @@ from __future__ import annotations
 
 import asyncio
 import json as _json
+import shutil
+import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -210,28 +213,123 @@ def doctor() -> None:
 # --------------------------------------------------------------------------- #
 # run
 # --------------------------------------------------------------------------- #
-@app.command()
-def run(
-    objective: Optional[str] = typer.Option(None, "--objective", "-o", help="Objective text."),
-    objective_file: Optional[Path] = typer.Option(None, "--objective-file", help="Read objective from a file."),
-    team: Optional[Path] = typer.Option(None, "--team", help="A pre-compiled/flat team.yaml."),
-    agent: Optional[str] = typer.Option(None, "--agent", help="Dispatch the objective directly to a single agent (skip lead decomposition)."),
-    resume: Optional[str] = typer.Option(None, "--resume", help="Resume a run-id."),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Plan only, no model calls."),
-    max_turns: Optional[int] = typer.Option(None, "--max-turns", help="Cap total turns."),
-    autonomy: Optional[str] = typer.Option(None, "--autonomy", help="supervised | autonomous (override)."),
-    attach: Optional[str] = typer.Option(None, "--attach", help="Start attached to an agent."),
-    detach: bool = typer.Option(False, "--detach", help="Background; return run-id."),
+def _resolve_team_folder(team_name: str) -> Path:
+    """Resolve a local team *name* to its project folder (path convention, §7).
+
+    Looks for a ``karo.yaml`` under, in order: the name as a path, ``<cwd>/<name>``,
+    ``<cwd>/teams/<name>``, and a sibling ``<cwd>/../<name>``. This is what lets you
+    address ``team/agent`` without typing ``-p <path>`` when you have several team
+    folders side by side.
+    """
+    here = state.project
+    candidates = [Path(team_name), here / team_name, here / "teams" / team_name, here.parent / team_name]
+    for c in candidates:
+        if (c / "karo.yaml").is_file():
+            return c
+    tried = ", ".join(str(c) for c in candidates)
+    _fail(f"team {team_name!r}: no karo.yaml found (looked in: {tried})")
+
+
+def _cluster_sling(*, context: str, namespace: str, agent: str, objective: str, dry_run: bool) -> None:
+    """Sling a task at ``<team>/<agent>`` on a KARO v2 cluster (team = namespace).
+
+    Creates an ``AgentTask`` (karo.dev/v1) in the namespace via ``kubectl apply``;
+    the operator reconciles it onto the agent. Mirrors v1's ``karo sling`` but
+    against the v2 CRD. Scale-from-zero is an operator M3 item — a zero-scaled team
+    may leave the task ``pending`` until a pod claims it.
+    """
+    name = f"karo-sling-{agent}-{int(time.time())}"
+    manifest = {
+        "apiVersion": "karo.dev/v1",
+        "kind": "AgentTask",
+        "metadata": {"name": name, "namespace": namespace, "labels": {"karo.dev/source": "karo-sling"}},
+        "spec": {
+            "team": namespace,
+            "owner": agent,
+            "objective": objective,
+            "acceptanceCriteria": [f"{agent} completes: {objective[:60]}"],
+        },
+    }
+    text = yaml.safe_dump(manifest, sort_keys=True)
+    if dry_run:
+        typer.echo(text)
+        _echo(f"[dry-run] would apply AgentTask {name} to namespace {namespace!r} (context {context!r})", err=True)
+        return
+    if not shutil.which("kubectl"):
+        _fail("kubectl not found on PATH; required for --context cluster sling")
+    proc = subprocess.run(
+        ["kubectl", "--context", context, "-n", namespace, "apply", "-f", "-"],
+        input=text, text=True, capture_output=True,
+    )
+    if proc.returncode != 0:
+        _fail(f"kubectl apply failed: {(proc.stderr or proc.stdout).strip()}")
+    _echo(proc.stdout.strip() or f"created AgentTask {name}")
+    _echo(f"slung at {namespace}/{agent}: AgentTask {name}")
+    _echo(f"watch:  kubectl --context {context} -n {namespace} get agenttasks -w")
+
+
+def _run_impl(
+    *,
+    target: Optional[str],
+    message: Optional[str],
+    objective: Optional[str],
+    objective_file: Optional[Path],
+    team: Optional[Path],
+    agent: Optional[str],
+    resume: Optional[str],
+    dry_run: bool,
+    max_turns: Optional[int],
+    autonomy: Optional[str],
+    context: Optional[str],
 ) -> None:
-    """Compile → validate → run a team locally (§7)."""
     if objective_file:
         objective = objective_file.read_text("utf-8")
-    if not objective and not resume:
-        _fail("provide --objective/-o or --objective-file (or --resume)")
     if autonomy and autonomy not in {"supervised", "autonomous"}:
         _fail("--autonomy must be supervised or autonomous")
 
-    result = _compile(team)
+    # Positional grammar (§7): `run [team/]agent "message"`.
+    #   - two positionals      → target + message
+    #   - one positional + -o  → target, objective from -o/--objective-file
+    #   - one positional alone → it's the objective (whole-team run)
+    if message is not None:
+        objective = message
+    elif target is not None:
+        if objective is not None:
+            pass  # target stays; objective came from -o/--objective-file
+        elif "/" in target:
+            _fail('provide a message, e.g. karo run <team>/<agent> "your prompt"')
+        else:
+            objective, target = target, None  # lone token = objective
+
+    # Resolve a `[team/]agent` target into a project folder (local) or namespace.
+    team_name: Optional[str] = None
+    project_dir = state.project
+    if target:
+        if "/" in target:
+            team_name, agent_ref = target.split("/", 1)
+        else:
+            agent_ref = target
+        if agent and agent != agent_ref:
+            _fail("specify the agent once: positional <agent> or --agent, not both")
+        agent = agent_ref
+        if context and not team_name:
+            _fail("cluster target must be <team>/<agent> (team = namespace)")
+        if not context and team_name:
+            project_dir = _resolve_team_folder(team_name)
+    elif context:
+        _fail('--context needs a <team>/<agent> target (team = namespace)')
+
+    if not objective and not resume:
+        _fail("provide an objective: a positional message, -o/--objective, or --objective-file (or --resume)")
+
+    # Cluster lane: create the AgentTask and return (no local run).
+    if context:
+        _cluster_sling(context=context, namespace=team_name, agent=agent,
+                       objective=objective or "", dry_run=dry_run)
+        return
+
+    compile_target = team or (project_dir if project_dir != state.project else None)
+    result = _compile(compile_target)
     diags = kr.validate(result, target="local")
     errors = [d for d in diags if d.severity == "error"]
     if errors:
@@ -244,10 +342,10 @@ def run(
         if agent not in names:
             _fail(f"unknown agent {agent!r}; team has: {', '.join(names) or '(none)'}")
 
-    project_dir = team.parent if team else state.project
+    run_dir = team.parent if team else project_dir
     coord = Coordinator(
         result.team,
-        project_dir=project_dir,
+        project_dir=run_dir,
         run_id=resume,
         dry_run=dry_run,
         autonomy_override=autonomy,
@@ -275,6 +373,54 @@ def run(
             _echo(f"  paused (attach to steer): {', '.join(res.paused_agents)}")
         for t in res.tasks:
             _echo(f"  - {t.id} [{t.state}] owner={t.owner}")
+
+
+@app.command()
+def run(
+    target: Optional[str] = typer.Argument(None, help="[team/]agent to target (team = folder locally, namespace with --context). Omit to run the whole team."),
+    message: Optional[str] = typer.Argument(None, help="Objective/prompt as a positional (alternative to -o)."),
+    objective: Optional[str] = typer.Option(None, "--objective", "-o", help="Objective text."),
+    objective_file: Optional[Path] = typer.Option(None, "--objective-file", help="Read objective from a file."),
+    team: Optional[Path] = typer.Option(None, "--team", help="A pre-compiled/flat team.yaml."),
+    agent: Optional[str] = typer.Option(None, "--agent", help="Dispatch directly to a single agent (skip lead decomposition)."),
+    context: Optional[str] = typer.Option(None, "--context", help="Target a KARO v2 cluster (team = namespace); creates an AgentTask via kubectl."),
+    resume: Optional[str] = typer.Option(None, "--resume", help="Resume a run-id."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Plan only, no model calls."),
+    max_turns: Optional[int] = typer.Option(None, "--max-turns", help="Cap total turns."),
+    autonomy: Optional[str] = typer.Option(None, "--autonomy", help="supervised | autonomous (override)."),
+) -> None:
+    """Compile → validate → run a team locally, or sling at `[team/]agent` (§7).
+
+    Examples:
+      karo run -o "ship the feature"                 # whole team
+      karo run "ship the feature"                    # same, positional objective
+      karo run reviewer "review the auth changes"    # one agent in this project
+      karo run pm-team/deploy-approver "approve X"   # one agent in team folder pm-team/
+      karo run pm-team/deploy-approver "approve X" --context my-cluster  # on a cluster
+    """
+    _run_impl(target=target, message=message, objective=objective, objective_file=objective_file,
+              team=team, agent=agent, resume=resume, dry_run=dry_run, max_turns=max_turns,
+              autonomy=autonomy, context=context)
+
+
+@app.command()
+def sling(
+    target: str = typer.Argument(..., help="[team/]agent to fire at (team = folder locally, namespace with --context)."),
+    message: str = typer.Argument(..., help="The objective/prompt to fire at the agent."),
+    context: Optional[str] = typer.Option(None, "--context", help="Target a KARO v2 cluster (team = namespace)."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Plan/render only."),
+    max_turns: Optional[int] = typer.Option(None, "--max-turns", help="Cap total turns."),
+    autonomy: Optional[str] = typer.Option(None, "--autonomy", help="supervised | autonomous (override)."),
+) -> None:
+    """Fire a single objective at one agent (v1-style): `karo sling team/agent "msg"`.
+
+    Sugar over `karo run <target> <message>`: the target is required, so there's no
+    ambiguity. Locally `team` resolves to a folder; with `--context` it is the
+    cluster namespace and an AgentTask is created.
+    """
+    _run_impl(target=target, message=message, objective=None, objective_file=None,
+              team=None, agent=None, resume=None, dry_run=dry_run, max_turns=max_turns,
+              autonomy=autonomy, context=context)
 
 
 def _live_event(ev) -> None:

@@ -40,11 +40,11 @@ karo validate
 ## 2. Sling a deploy-approval at one agent
 
 This is the "fire a specific comment at a specific agent" flow. The objective is
-your comment; `--agent` is the target:
+your comment; the agent is the target:
 
 ```bash
-karo run --agent deploy-approver \
-  -o "Approve deploy for JIRA-789: ship auth-service v2.3"
+karo sling deploy-approver "Approve deploy for JIRA-789: ship auth-service v2.3"
+# equivalently: karo run deploy-approver "…"  or  karo run --agent deploy-approver -o "…"
 ```
 
 `deploy-approver` runs the `approve-deploy` skill and then **pauses at the human
@@ -69,8 +69,7 @@ karo attach deploy-approver --continue
 # released 1 paused task(s) for deploy-approver
 
 # re-run — the released task is reused and proceeds past the gate
-karo run --agent deploy-approver \
-  -o "Approve deploy for JIRA-789: ship auth-service v2.3"
+karo sling deploy-approver "Approve deploy for JIRA-789: ship auth-service v2.3"
 # → run …: completed
 ```
 
@@ -114,6 +113,15 @@ Stub mode is for learning the workflow. To run for real:
 ```bash
 karo export -o pm-team.manifest.yaml --namespace pm-team
 kubectl apply -f pm-team.manifest.yaml     # requires the KARO v2 operator
+```
+
+Then sling at the cluster team exactly as you did locally — `--context` makes
+`<team>` the namespace and creates an `AgentTask` for the operator to run:
+
+```bash
+karo sling pm-team/deploy-approver "approve JIRA-789" --context kind-karo
+# created AgentTask … in namespace pm-team
+# watch:  kubectl --context kind-karo -n pm-team get agenttasks -w
 ```
 
 The `permissionMode: prompt` on `deploy-approver` has no interactive surface on a
