@@ -8,7 +8,7 @@ Adding a new harness = implementing this Protocol.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, Optional, Protocol, runtime_checkable
+from typing import Any, AsyncIterator, Protocol, runtime_checkable
 
 
 @dataclass

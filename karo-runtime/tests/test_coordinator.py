@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-import pytest
 
 from karo_runtime.runtime import Coordinator
 from karo_runtime.spec import compile_flat, compile_folder
