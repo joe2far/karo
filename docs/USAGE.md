@@ -7,7 +7,11 @@ real model. The same `AgentTeam` you build here is what `karo export` hands to
 Kubernetes (KARO v2), unchanged.
 
 If you just want the command list, see the table in the [root README](../README.md#command-reference-cli)
-or `karo --help`. This guide explains the *model* behind the commands.
+or `karo --help`. This guide explains the *model* behind the commands. For one
+end-to-end developer journey — scaffold a dev team, sling a feature from a file,
+**open a PR for review**, share it, and graduate to Kubernetes with a git
+**service account** — follow [`DEV-WORKFLOW.md`](DEV-WORKFLOW.md), which is honest
+about which steps work today and which are roadmap seams.
 
 ---
 
@@ -46,9 +50,11 @@ when you want real model calls.
 ## 2. The authoring model: a folder is the source
 
 You author a **folder**; `karo compile` turns it into the canonical `AgentTeam`
-(the build artifact). Scaffold one:
+(the build artifact). Scaffold one — note that `karo init` scaffolds into the
+**current directory**, so create the folder first:
 
 ```bash
+mkdir refactor-team && cd refactor-team
 karo init --name refactor-team --template lead-team
 ```
 
@@ -251,8 +257,13 @@ runs in the workspace root that holds them all. Use `--no-repos` to skip cloning
   helper, or a token in the URL via `${env:GITHUB_TOKEN}`). The team definition
   carries **no** credentials — a colleague clones the same team and authenticates
   as themselves (§9).
-- **On cluster:** the agent pod's init-container clones the same repos from the
-  same spec, so "which repo this agent works on" is portable, not per-machine.
+- **On cluster (roadmap):** the *intent* is that the agent pod's init-container
+  clones the same repos from the same spec, so "which repo this agent works on"
+  stays portable — but this is **not yet wired in the operator** (the provisioner
+  builds the pod without a clone init-container or a git credential). On a cluster
+  there's no human runner to borrow auth from, so this needs a **git
+  service-account** Secret; see the full walkthrough and the exact gap in
+  [`DEV-WORKFLOW.md` §5b](DEV-WORKFLOW.md#5b-git-credentials-on-cluster-service-account-roadmap).
 
 > **Validation:** `karo validate` flags an agent that references a repo you didn't
 > declare (`unknown-repo`), just like unknown tools/skills/MCP servers.

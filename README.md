@@ -38,7 +38,9 @@ drift.
 
 **New here?** Start with the [**usage guide**](docs/USAGE.md) (install → author →
 run → sling at one agent → human gate → export) and the runnable
-[**`examples/`**](examples/) (a Jira-integrated team you can run offline).
+[**`examples/`**](examples/) (a Jira-integrated team you can run offline). For one
+complete developer journey — feature → **PR** → share → Kubernetes with a git
+**service account** — follow [**`docs/DEV-WORKFLOW.md`**](docs/DEV-WORKFLOW.md).
 
 The full design lives in [`docs/`](docs/):
 [`USAGE.md`](docs/USAGE.md) (the hands-on guide),
@@ -56,6 +58,8 @@ curl -fsSL https://raw.githubusercontent.com/joe2far/karo/main/scripts/install.s
 # (or, hacking on KARO itself, editable from the monorepo: pip install -e karo-runtime -e cli)
 
 # Scaffold a team as the folder convention (karo.yaml + agents/ + skills/ + …)
+# Note: init scaffolds into the *current* directory, so make one first:
+mkdir refactor-team && cd refactor-team
 karo init --name refactor-team --template lead-team
 
 # Static checks — no network, no model calls
@@ -84,7 +88,7 @@ You author a **folder** (the source); the CLI compiles it into the canonical
 `AgentTeam` (the build artifact):
 
 ```
-refactor-crew/
+refactor-team/         # you create this dir; `karo init` scaffolds into it
   karo.yaml            # thin: team name, defaults, coordination, budgets, agent refs
   agents/
     planner/AGENT.md   # frontmatter (harness, model, refs) + the body IS the system prompt
@@ -160,7 +164,7 @@ docker build -f agent-runtime-image/Dockerfile -t ghcr.io/karo/agent-runtime:v2 
 - **Harness** — the execution front-end (`sdk`, `claude-code`, `cursor`, `codex`). Only `sdk` is cluster-capable; the others are local-only (portability matrix, CLI §4.7).
 - **Coordination patterns** — `lead-and-teammates`, `pipeline`, `swarm`, all on the same Coordinator primitives (durable tasks + mailbox + memory + attach/guards).
 - **Attach & direct** — every agent is a live, steerable session, not an approval queue. `karo attach` to watch, inject a turn, interrupt, or take over. **Guards** pause-and-flag an agent for attention; they are not approvals.
-- **Working repos** — agents declare the git repos they work on (`resources.repos` + per-agent `repos:`); KARO clones them into the workspace on run and sets each agent's working dir. Auth is the runner's own git config, so the team carries no credentials.
+- **Working repos** — agents declare the git repos they work on (`resources.repos` + per-agent `repos:`); KARO clones them into the workspace on run and sets each agent's working dir. Auth is the runner's own git config, so the team carries no credentials. (On a cluster there's no human runner, so this needs a git **service-account** Secret — documented, but not yet wired in the operator: see [`docs/DEV-WORKFLOW.md` §5b](docs/DEV-WORKFLOW.md#5b-git-credentials-on-cluster-service-account-roadmap).)
 - **Budgets** — authoritative, synchronous token accounting (atomic counter), identical locally and on cluster.
 - **Parity** — `karo export`'s spec body equals the local spec after canonicalization; this is tested against a fixture with a large integer and a block-scalar to catch YAML-portability drift.
 
