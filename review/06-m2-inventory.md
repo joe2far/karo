@@ -26,5 +26,18 @@ ruff clean · pytest 62 + 11 · `go build/vet/test` green · **envtest reconcile
 PASS against real apiserver** (`KUBEBUILDER_ASSETS` 1.29.0) · golangci-lint 0 ·
 controller-gen + schema drift in sync.
 
-(Verdict and critical-issue analysis: `07-m2-verdict.md`, after the adversarial
-coordination review.)
+## Post-review state updates (after `07-m2-verdict.md` fixes)
+
+The adversarial review (07) found the cluster lane over-claimed; after fixes,
+**validated against a real Postgres**:
+
+| # | item | was | now | note |
+|---|---|---|---|---|
+| 5 | Durable Postgres stores | U | **T** | all store-contract tests pass on real Postgres (JSONB verified) |
+| 8 | Resume | P | **T** | `test_resume_after_partial_run_completes` (kill→resume) |
+| 9 | Parity Checkpoint A | P | **T** | **file == Postgres** task graph + outputs passes; CI runs `postgres:16` |
+| 12 | Dispatcher / scale-up | M | **M (M3)** | coordination via pod-side claim; on-demand scale-up is M3 |
+| + | multi-pod double-plan guard | — | **T** | lead-only plan + agent-scoped claim |
+| + | budget-pause vs guard-release | — | **T** | `Task.pause_reason` distinguishes them |
+
+(Verdict and critical-issue analysis: `07-m2-verdict.md`.)
