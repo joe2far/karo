@@ -1,0 +1,54 @@
+# A sample AgentTeam as produced by `karo export` (CLI §12). Apply with:
+#   kubectl apply -f config/samples/karo_v1_agentteam.yaml
+apiVersion: karo.dev/v1
+kind: AgentTeam
+metadata:
+  name: refactor-crew
+  namespace: agents
+  labels:
+    domain: platform
+spec:
+  defaults:
+    harness: sdk
+    model: { provider: anthropic, id: claude-opus-4-8 }
+    permissionMode: plan
+  budgets:
+    team: { provider: anthropic, limit: 5000000, window: daily, onExceed: pause }
+  coordination:
+    pattern: lead-and-teammates
+    lead: planner
+  interaction:
+    attachable: true
+    autonomy: supervised
+  agents:
+    - name: planner
+      harness: sdk
+      model: { provider: anthropic, id: claude-opus-4-8 }
+      instructions: |
+        You are the lead. Decompose the objective into tasks with acceptance
+        criteria, assign them, and coordinate. Do not write code yourself.
+    - name: implementer
+      harness: sdk
+      model: { provider: anthropic, id: claude-sonnet-4-6 }
+      instructions: |
+        You implement assigned tasks to their acceptance criteria and report back.
+    - name: reviewer
+      harness: sdk
+      model: { provider: bedrock, id: anthropic.claude-sonnet-4-6-v1:0 }
+      instructions: |
+        You review completed work against acceptance criteria and return feedback.
+      interaction: { autonomy: autonomous }
+  runtime:
+    scaleToZero: true
+    idleTimeoutSeconds: 300
+    maxConcurrentAgents: 10
+    backends:
+      memory: { kind: redis, secretRef: { name: karo-redis } }
+      mailbox: { kind: redis, secretRef: { name: karo-redis } }
+      tasks: { kind: postgres, secretRef: { name: karo-pg } }
+    observability:
+      metrics: victoriametrics
+      tracing: { exporter: otel, endpoint: http://otel-collector:4317 }
+    image:
+      agentRuntime: ghcr.io/karo/agent-runtime:v2
+      pullPolicy: IfNotPresent

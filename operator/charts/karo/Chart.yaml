@@ -1,0 +1,14 @@
+apiVersion: v2
+name: karo
+description: KARO — Kubernetes Agent Runtime Orchestrator. Installs the controller, CRDs, and RBAC.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://karo.dev
+sources:
+  - https://github.com/joe2far/karo
+keywords:
+  - agents
+  - kubernetes
+  - operator
+  - llm

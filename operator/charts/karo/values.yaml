@@ -1,0 +1,37 @@
+controller:
+  image:
+    repository: ghcr.io/karo/karo-controller
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicas: 1
+  leaderElection: true
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+agentRuntime:
+  image: ghcr.io/karo/agent-runtime:v2
+  pullPolicy: IfNotPresent
+
+# Bring-your-own backends via secretRef, or let the chart deploy defaults.
+backends:
+  redis:
+    deploy: false
+    secretName: karo-redis
+  postgres:
+    deploy: false
+    secretName: karo-pg
+
+serviceAccount:
+  create: true
+  name: karo-controller
+
+observability:
+  metrics:
+    enabled: true
+  tracing:
+    endpoint: http://otel-collector:4317

@@ -1,0 +1,66 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  python:
+    name: karo-runtime + cli (python)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          pip install -e karo-runtime -e cli
+          pip install pytest pytest-asyncio
+      - name: Test karo-runtime
+        run: cd karo-runtime && pytest -q
+      - name: Test cli
+        run: cd cli && pytest -q
+      - name: Schema drift check (generated == committed)
+        run: |
+          python -c "import json,karo_runtime as kr; print(json.dumps(kr.json_schema(),indent=2,sort_keys=True))" > /tmp/schema.json
+          diff <(tail -n +1 /tmp/schema.json) <(head -c -1 karo-runtime/schema/agentteam.schema.json) \
+            || (echo '::error::JSON Schema drift — run the schema generator and commit'; exit 1)
+      - name: Templates have no org identifiers
+        run: |
+          cd cli && python - <<'PY'
+          import tempfile, pathlib, subprocess, sys
+          from karo.templates import template_files
+          forbidden = ["joe2farrell", "@gmail"]
+          for t in ("minimal", "lead-crew", "pipeline"):
+              for _, content in template_files(t, "t").items():
+                  for tok in forbidden:
+                      assert tok not in content.lower(), f"{tok} in {t}"
+          print("ok: no org identifiers in templates")
+          PY
+
+  operator:
+    name: operator (go)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+      - name: Build + vet + test
+        run: |
+          cd operator
+          go build ./...
+          go vet ./...
+          go test ./...
+      - name: CRD/deepcopy generation is up to date
+        run: |
+          cd operator
+          go run sigs.k8s.io/controller-tools/cmd/controller-gen@v0.14.0 \
+            object:headerFile=/dev/null paths=./api/...
+          go run sigs.k8s.io/controller-tools/cmd/controller-gen@v0.14.0 \
+            crd rbac:roleName=karo-manager-role paths=./... \
+            output:crd:dir=./config/crd output:rbac:dir=./config/rbac
+          git diff --exit-code -- api/ config/ \
+            || (echo '::error::generated code/CRDs out of date — run make generate manifests'; exit 1)

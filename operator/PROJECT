@@ -1,0 +1,25 @@
+domain: karo.dev
+layout:
+- go.kubebuilder.io/v4
+projectName: karo
+repo: github.com/joe2far/karo/operator
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: karo.dev
+  group: karo
+  kind: AgentTeam
+  path: github.com/joe2far/karo/operator/api/v1
+  version: v1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: karo.dev
+  group: karo
+  kind: AgentTask
+  path: github.com/joe2far/karo/operator/api/v1
+  version: v1
+version: "3"

@@ -1,0 +1,851 @@
+{
+  "$defs": {
+    "Agent": {
+      "additionalProperties": false,
+      "properties": {
+        "budget": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AgentBudget"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "harness": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Harness"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "instructions": {
+          "default": "",
+          "title": "Instructions",
+          "type": "string"
+        },
+        "interaction": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Interaction"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "mailbox": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mailbox"
+        },
+        "mcp": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Mcp",
+          "type": "array"
+        },
+        "memory": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AgentMemoryRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "model": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ModelBinding"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "permissionMode": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PermissionMode"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "skills": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Skills",
+          "type": "array"
+        },
+        "tools": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Tools",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "Agent",
+      "type": "object"
+    },
+    "AgentBudget": {
+      "additionalProperties": false,
+      "description": "Per-agent override: either an explicit token ``limit`` or a ``share``.",
+      "properties": {
+        "limit": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Limit"
+        },
+        "share": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Share"
+        }
+      },
+      "title": "AgentBudget",
+      "type": "object"
+    },
+    "AgentMemoryRef": {
+      "additionalProperties": false,
+      "properties": {
+        "scope": {
+          "$ref": "#/$defs/MemoryScope",
+          "default": "team"
+        }
+      },
+      "title": "AgentMemoryRef",
+      "type": "object"
+    },
+    "AgentTeamSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "agents": {
+          "items": {
+            "$ref": "#/$defs/Agent"
+          },
+          "title": "Agents",
+          "type": "array"
+        },
+        "budgets": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Budgets"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "coordination": {
+          "$ref": "#/$defs/Coordination"
+        },
+        "defaults": {
+          "$ref": "#/$defs/Defaults"
+        },
+        "interaction": {
+          "$ref": "#/$defs/Interaction"
+        },
+        "memory": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Memory"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "resources": {
+          "$ref": "#/$defs/Resources"
+        }
+      },
+      "title": "AgentTeamSpec",
+      "type": "object"
+    },
+    "Autonomy": {
+      "enum": [
+        "supervised",
+        "autonomous"
+      ],
+      "title": "Autonomy",
+      "type": "string"
+    },
+    "Backend": {
+      "enum": [
+        "file",
+        "sqlite",
+        "redis",
+        "none"
+      ],
+      "title": "Backend",
+      "type": "string"
+    },
+    "Budgets": {
+      "additionalProperties": false,
+      "properties": {
+        "perAgent": {
+          "default": false,
+          "title": "Peragent",
+          "type": "boolean"
+        },
+        "team": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TeamBudget"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "Budgets",
+      "type": "object"
+    },
+    "Coordination": {
+      "additionalProperties": false,
+      "properties": {
+        "lead": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Lead"
+        },
+        "mailbox": {
+          "$ref": "#/$defs/MailboxConfig"
+        },
+        "pattern": {
+          "$ref": "#/$defs/Pattern",
+          "default": "lead-and-teammates"
+        },
+        "pipeline": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Pipeline"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "taskLayer": {
+          "$ref": "#/$defs/TaskLayer"
+        }
+      },
+      "title": "Coordination",
+      "type": "object"
+    },
+    "Defaults": {
+      "additionalProperties": false,
+      "properties": {
+        "harness": {
+          "$ref": "#/$defs/Harness",
+          "default": "sdk"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ModelBinding"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "permissionMode": {
+          "$ref": "#/$defs/PermissionMode",
+          "default": "prompt"
+        },
+        "workingDir": {
+          "default": "./workspace",
+          "title": "Workingdir",
+          "type": "string"
+        }
+      },
+      "title": "Defaults",
+      "type": "object"
+    },
+    "GcStrategy": {
+      "enum": [
+        "aggressive",
+        "lru",
+        "none"
+      ],
+      "title": "GcStrategy",
+      "type": "string"
+    },
+    "Guard": {
+      "additionalProperties": false,
+      "properties": {
+        "pauseBefore": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pausebefore"
+        },
+        "pauseOn": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PauseOn"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "Guard",
+      "type": "object"
+    },
+    "Harness": {
+      "enum": [
+        "sdk",
+        "claude-code",
+        "cursor",
+        "codex"
+      ],
+      "title": "Harness",
+      "type": "string"
+    },
+    "Interaction": {
+      "additionalProperties": false,
+      "properties": {
+        "attachable": {
+          "default": true,
+          "title": "Attachable",
+          "type": "boolean"
+        },
+        "autonomy": {
+          "$ref": "#/$defs/Autonomy",
+          "default": "supervised"
+        },
+        "guards": {
+          "items": {
+            "$ref": "#/$defs/Guard"
+          },
+          "title": "Guards",
+          "type": "array"
+        },
+        "pauseTimeout": {
+          "default": 0,
+          "title": "Pausetimeout",
+          "type": "integer"
+        }
+      },
+      "title": "Interaction",
+      "type": "object"
+    },
+    "MailboxConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "backend": {
+          "$ref": "#/$defs/Backend",
+          "default": "file"
+        },
+        "hardLimit": {
+          "default": 500,
+          "title": "Hardlimit",
+          "type": "integer"
+        },
+        "path": {
+          "default": "./.karo/mail",
+          "title": "Path",
+          "type": "string"
+        }
+      },
+      "title": "MailboxConfig",
+      "type": "object"
+    },
+    "McpServer": {
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Command"
+        },
+        "env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Env",
+          "type": "object"
+        },
+        "headers": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Headers",
+          "type": "object"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "transport": {
+          "$ref": "#/$defs/Transport",
+          "default": "stdio"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Url"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "McpServer",
+      "type": "object"
+    },
+    "Memory": {
+      "additionalProperties": false,
+      "properties": {
+        "backend": {
+          "$ref": "#/$defs/Backend",
+          "default": "file"
+        },
+        "path": {
+          "default": "./.karo/memory",
+          "title": "Path",
+          "type": "string"
+        },
+        "retention": {
+          "$ref": "#/$defs/Retention"
+        },
+        "scope": {
+          "$ref": "#/$defs/MemoryScope",
+          "default": "team"
+        }
+      },
+      "title": "Memory",
+      "type": "object"
+    },
+    "MemoryScope": {
+      "enum": [
+        "team",
+        "per-agent",
+        "both"
+      ],
+      "title": "MemoryScope",
+      "type": "string"
+    },
+    "Metadata": {
+      "additionalProperties": false,
+      "properties": {
+        "labels": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Labels",
+          "type": "object"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "namespace": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Namespace"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "Metadata",
+      "type": "object"
+    },
+    "ModelBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "params": {
+          "additionalProperties": true,
+          "title": "Params",
+          "type": "object"
+        },
+        "profile": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Profile"
+        },
+        "provider": {
+          "$ref": "#/$defs/Provider",
+          "default": "anthropic"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "ModelBinding",
+      "type": "object"
+    },
+    "OnExceed": {
+      "enum": [
+        "warn",
+        "pause",
+        "hardstop"
+      ],
+      "title": "OnExceed",
+      "type": "string"
+    },
+    "Pattern": {
+      "enum": [
+        "lead-and-teammates",
+        "pipeline",
+        "swarm"
+      ],
+      "title": "Pattern",
+      "type": "string"
+    },
+    "PauseOn": {
+      "enum": [
+        "taskComplete",
+        "planReady",
+        "error"
+      ],
+      "title": "PauseOn",
+      "type": "string"
+    },
+    "PermissionMode": {
+      "enum": [
+        "prompt",
+        "acceptEdits",
+        "plan",
+        "bypass"
+      ],
+      "title": "PermissionMode",
+      "type": "string"
+    },
+    "Pipeline": {
+      "additionalProperties": false,
+      "properties": {
+        "stages": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Stages",
+          "type": "array"
+        }
+      },
+      "title": "Pipeline",
+      "type": "object"
+    },
+    "Provider": {
+      "enum": [
+        "anthropic",
+        "bedrock",
+        "vertex"
+      ],
+      "title": "Provider",
+      "type": "string"
+    },
+    "Resources": {
+      "additionalProperties": false,
+      "properties": {
+        "mcpServers": {
+          "items": {
+            "$ref": "#/$defs/McpServer"
+          },
+          "title": "Mcpservers",
+          "type": "array"
+        },
+        "skills": {
+          "items": {
+            "$ref": "#/$defs/SkillRef"
+          },
+          "title": "Skills",
+          "type": "array"
+        },
+        "tools": {
+          "items": {
+            "$ref": "#/$defs/ToolDef"
+          },
+          "title": "Tools",
+          "type": "array"
+        }
+      },
+      "title": "Resources",
+      "type": "object"
+    },
+    "Retention": {
+      "additionalProperties": false,
+      "properties": {
+        "gcStrategy": {
+          "$ref": "#/$defs/GcStrategy",
+          "default": "lru"
+        },
+        "maxItems": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maxitems"
+        }
+      },
+      "title": "Retention",
+      "type": "object"
+    },
+    "SkillRef": {
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source"
+      ],
+      "title": "SkillRef",
+      "type": "object"
+    },
+    "TaskLayer": {
+      "additionalProperties": false,
+      "properties": {
+        "backend": {
+          "$ref": "#/$defs/Backend",
+          "default": "file"
+        },
+        "path": {
+          "default": "./.karo/tasks",
+          "title": "Path",
+          "type": "string"
+        },
+        "resumable": {
+          "default": true,
+          "title": "Resumable",
+          "type": "boolean"
+        }
+      },
+      "title": "TaskLayer",
+      "type": "object"
+    },
+    "TeamBudget": {
+      "additionalProperties": false,
+      "properties": {
+        "limit": {
+          "title": "Limit",
+          "type": "integer"
+        },
+        "onExceed": {
+          "$ref": "#/$defs/OnExceed",
+          "default": "pause"
+        },
+        "provider": {
+          "$ref": "#/$defs/Provider",
+          "default": "anthropic"
+        },
+        "window": {
+          "$ref": "#/$defs/Window",
+          "default": "daily"
+        }
+      },
+      "required": [
+        "limit"
+      ],
+      "title": "TeamBudget",
+      "type": "object"
+    },
+    "ToolDef": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "module": {
+          "title": "Module",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "schema": {
+          "additionalProperties": true,
+          "title": "Schema",
+          "type": "object"
+        }
+      },
+      "required": [
+        "name",
+        "module"
+      ],
+      "title": "ToolDef",
+      "type": "object"
+    },
+    "Transport": {
+      "enum": [
+        "stdio",
+        "http"
+      ],
+      "title": "Transport",
+      "type": "string"
+    },
+    "Window": {
+      "enum": [
+        "daily",
+        "session",
+        "unbounded"
+      ],
+      "title": "Window",
+      "type": "string"
+    }
+  },
+  "$id": "https://karo.dev/schema/v1/agentteam.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The compiled ``AgentTeam`` document (``team.yaml`` form).",
+  "properties": {
+    "apiVersion": {
+      "default": "karo.dev/v1",
+      "title": "Apiversion",
+      "type": "string"
+    },
+    "kind": {
+      "const": "AgentTeam",
+      "default": "AgentTeam",
+      "title": "Kind",
+      "type": "string"
+    },
+    "metadata": {
+      "$ref": "#/$defs/Metadata"
+    },
+    "runtime": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Runtime"
+    },
+    "spec": {
+      "$ref": "#/$defs/AgentTeamSpec"
+    }
+  },
+  "required": [
+    "metadata"
+  ],
+  "title": "AgentTeam",
+  "type": "object"
+}
