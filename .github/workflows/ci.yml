@@ -25,8 +25,8 @@ jobs:
       - name: Schema drift check (generated == committed)
         run: |
           python -c "import json,karo_runtime as kr; print(json.dumps(kr.json_schema(),indent=2,sort_keys=True))" > /tmp/schema.json
-          diff <(tail -n +1 /tmp/schema.json) <(head -c -1 karo-runtime/schema/agentteam.schema.json) \
-            || (echo '::error::JSON Schema drift — run the schema generator and commit'; exit 1)
+          diff -u karo-runtime/schema/agentteam.schema.json /tmp/schema.json \
+            || (echo '::error::JSON Schema drift — run scripts/gen_schema.py and commit'; exit 1)
       - name: Templates have no org identifiers
         run: |
           cd cli && python - <<'PY'
@@ -60,7 +60,7 @@ jobs:
           go run sigs.k8s.io/controller-tools/cmd/controller-gen@v0.14.0 \
             object:headerFile=/dev/null paths=./api/...
           go run sigs.k8s.io/controller-tools/cmd/controller-gen@v0.14.0 \
-            crd rbac:roleName=karo-manager-role paths=./... \
+            crd:allowDangerousTypes=true rbac:roleName=karo-manager-role paths=./... \
             output:crd:dir=./config/crd output:rbac:dir=./config/rbac
           git diff --exit-code -- api/ config/ \
             || (echo '::error::generated code/CRDs out of date — run make generate manifests'; exit 1)
