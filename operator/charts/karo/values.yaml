@@ -17,14 +17,16 @@ agentRuntime:
   image: ghcr.io/karo/agent-runtime:v2
   pullPolicy: IfNotPresent
 
-# Bring-your-own backends via secretRef, or let the chart deploy defaults.
+# Postgres is the single default backend (tasks/memory/mailbox). Bring your own
+# via secretRef, or let the chart deploy a default. Redis is optional and can be
+# enabled later for mailbox/memory; it is not required.
 backends:
-  redis:
-    deploy: false
-    secretName: karo-redis
   postgres:
     deploy: false
     secretName: karo-pg
+  redis:
+    deploy: false      # optional; not the default backend
+    secretName: karo-redis
 
 serviceAccount:
   create: true

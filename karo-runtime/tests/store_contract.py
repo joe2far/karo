@@ -53,7 +53,6 @@ class Backend:
 
 # ---- task stores ---------------------------------------------------------- #
 _PG_DSN = os.environ.get("KARO_TEST_PG_DSN")
-_REDIS_URL = os.environ.get("KARO_TEST_REDIS_URL")
 
 
 def _file_task(tmp_path: Path):
@@ -77,22 +76,25 @@ TASK_BACKENDS = [
 
 
 # ---- mailbox stores ------------------------------------------------------- #
+# Postgres is the DEFAULT cluster backend for mailbox + memory too (one stateful
+# dependency for the whole cluster). Redis stays available in stores/redis.py and
+# can be wired in later, but is not part of the default contract run.
 def _file_mail(tmp_path: Path, hard_limit: int = 500):
     return FileMailboxStore(tmp_path / "mail", hard_limit=hard_limit)
 
 
-def _redis_mail(tmp_path: Path, hard_limit: int = 500):
-    from karo_runtime.stores.redis import RedisMailboxStore
+def _pg_mail(tmp_path: Path, hard_limit: int = 500):
+    from karo_runtime.stores.postgres import PostgresMailboxStore
 
-    return RedisMailboxStore(_REDIS_URL, hard_limit=hard_limit, namespace=_ns(tmp_path))
+    return PostgresMailboxStore(_PG_DSN, hard_limit=hard_limit, table=_ns(tmp_path) + "_mail")
 
 
 MAILBOX_BACKENDS = [
     Backend("file", _file_mail),
     Backend(
-        "redis", _redis_mail,
-        available=bool(_REDIS_URL) and _have("redis"),
-        skip_reason="set KARO_TEST_REDIS_URL and `pip install karo-runtime[redis]`",
+        "postgres", _pg_mail,
+        available=bool(_PG_DSN) and _have("asyncpg"),
+        skip_reason="set KARO_TEST_PG_DSN and `pip install karo-runtime[postgres]`",
     ),
 ]
 
@@ -102,18 +104,18 @@ def _file_mem(tmp_path: Path):
     return FileMemoryStore(tmp_path / "mem")
 
 
-def _redis_mem(tmp_path: Path):
-    from karo_runtime.stores.redis import RedisMemoryStore
+def _pg_mem(tmp_path: Path):
+    from karo_runtime.stores.postgres import PostgresMemoryStore
 
-    return RedisMemoryStore(_REDIS_URL, namespace=_ns(tmp_path))
+    return PostgresMemoryStore(_PG_DSN, table=_ns(tmp_path) + "_mem")
 
 
 MEMORY_BACKENDS = [
     Backend("file", _file_mem),
     Backend(
-        "redis", _redis_mem,
-        available=bool(_REDIS_URL) and _have("redis"),
-        skip_reason="set KARO_TEST_REDIS_URL and `pip install karo-runtime[redis]`",
+        "postgres", _pg_mem,
+        available=bool(_PG_DSN) and _have("asyncpg"),
+        skip_reason="set KARO_TEST_PG_DSN and `pip install karo-runtime[postgres]`",
     ),
 ]
 

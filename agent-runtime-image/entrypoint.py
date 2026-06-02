@@ -64,24 +64,24 @@ def _inject_cluster_stores(coord) -> bool:
     memory_dsn = os.environ.get("KARO_MEMORY_DSN", "")
     if memory_dsn:
         try:
-            from karo_runtime.stores.redis import RedisMemoryStore
+            from karo_runtime.stores.postgres import PostgresMemoryStore
 
-            coord.memory = RedisMemoryStore(memory_dsn)
-            _status("memory store: RedisMemoryStore (KARO_MEMORY_DSN)")
+            coord.memory = PostgresMemoryStore(memory_dsn)
+            _status("memory store: PostgresMemoryStore (KARO_MEMORY_DSN)")
             injected = True
         except Exception as exc:  # noqa: BLE001 - degrade gracefully
-            _status(f"memory store: KARO_MEMORY_DSN set but Redis unavailable ({exc}); using file store")
+            _status(f"memory store: KARO_MEMORY_DSN set but Postgres unavailable ({exc}); using file store")
 
     mailbox_dsn = os.environ.get("KARO_MAILBOX_DSN", "")
     if mailbox_dsn:
         try:
-            from karo_runtime.stores.redis import RedisMailboxStore
+            from karo_runtime.stores.postgres import PostgresMailboxStore
 
-            coord.mail = RedisMailboxStore(mailbox_dsn)
-            _status("mailbox store: RedisMailboxStore (KARO_MAILBOX_DSN)")
+            coord.mail = PostgresMailboxStore(mailbox_dsn)
+            _status("mailbox store: PostgresMailboxStore (KARO_MAILBOX_DSN)")
             injected = True
         except Exception as exc:  # noqa: BLE001 - degrade gracefully
-            _status(f"mailbox store: KARO_MAILBOX_DSN set but Redis unavailable ({exc}); using file store")
+            _status(f"mailbox store: KARO_MAILBOX_DSN set but Postgres unavailable ({exc}); using file store")
 
     return injected
 

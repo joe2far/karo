@@ -112,16 +112,18 @@ def test_parity_checkpoint_a_runtime(tmp_path):
     Marked xfail until M2 (see M2_REQUIREMENTS). When KARO_TEST_REDIS_URL and
     KARO_TEST_PG_DSN are set (kind), this runs for real and will xpass once M2
     coordination makes the two backends agree."""
-    redis_url = os.environ.get("KARO_TEST_REDIS_URL")
     pg_dsn = os.environ.get("KARO_TEST_PG_DSN")
-    if not (redis_url and pg_dsn):
-        pytest.fail(
-            "cluster backends not configured (set KARO_TEST_REDIS_URL + "
-            "KARO_TEST_PG_DSN). Until M2 + backends, Parity Checkpoint A cannot run."
+    if not pg_dsn:
+        pytest.skip(
+            "cluster backend not configured (set KARO_TEST_PG_DSN to run Parity "
+            "Checkpoint A against Postgres; e.g. on kind)."
         )
 
-    from karo_runtime.stores.postgres import PostgresTaskStore
-    from karo_runtime.stores.redis import RedisMailboxStore, RedisMemoryStore
+    from karo_runtime.stores.postgres import (
+        PostgresMailboxStore,
+        PostgresMemoryStore,
+        PostgresTaskStore,
+    )
 
     team = compile_flat(FIXTURE).team
     local = _signature(team, tmp_path / "local")
@@ -129,7 +131,7 @@ def test_parity_checkpoint_a_runtime(tmp_path):
         team,
         tmp_path / "cluster",
         tasks=PostgresTaskStore(pg_dsn, table="parity_tasks"),
-        mailbox=RedisMailboxStore(redis_url, namespace="parity"),
-        memory=RedisMemoryStore(redis_url, namespace="parity"),
+        mailbox=PostgresMailboxStore(pg_dsn, table="parity_mail"),
+        memory=PostgresMemoryStore(pg_dsn, table="parity_mem"),
     )
     assert local == cluster, "local and cluster task graphs diverged — parity broken"
