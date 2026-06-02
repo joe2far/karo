@@ -131,8 +131,16 @@ def main() -> int:
         _status("no KARO_OBJECTIVE set; idling (awaiting Dispatcher).")
         return 0
 
-    _status(f"running coordinator for objective: {objective!r}")
-    run_result = asyncio.run(coord.run(objective))
+    # Long-lived claim loop (v2 §5.1): keep polling for claimable work so a
+    # teammate pod started before the lead plans still picks up its task. The
+    # operator scales the pod to zero once the graph is terminal.
+    idle_timeout = float(os.environ.get("KARO_IDLE_TIMEOUT", "300"))
+    poll_interval = float(os.environ.get("KARO_POLL_INTERVAL", "2"))
+    _status(f"serving coordinator for objective: {objective!r} "
+            f"(poll={poll_interval}s idle_timeout={idle_timeout}s)")
+    run_result = asyncio.run(
+        coord.serve(objective, idle_timeout=idle_timeout, poll_interval=poll_interval)
+    )
     _status(
         f"run {run_result.run_id} done: completed={run_result.completed} "
         f"halted={run_result.halted} reason={run_result.halt_reason or '-'}"

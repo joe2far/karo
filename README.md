@@ -204,11 +204,16 @@ Outstanding for a complete solution:
   (today's lead decomposition is deterministic — one task per teammate);
   **mailbox-driven** coordination (inboxes are recorded, not yet consumed to
   drive dialogue); full PTY attach for the local-only Cursor/Codex harnesses.
-- **Operator (cluster) M3 — the big one:** on-demand **scale-from-zero**
-  (provision the lead pod on objective arrival, wake teammates when claimable work
-  exists) and a long-lived pod **claim loop** (today a pod runs `run()` once and
-  exits). This is what makes `karo sling … --context` (which creates the
-  `AgentTask`) actually *run* on an idle team rather than leaving it `pending`.
+- **Operator (cluster) M3 — scale-from-zero + claim loop:** *done and envtest-tested.*
+  The `AgentTeam` reconciler watches `AgentTask` projections and sets per-agent
+  replicas — a task (e.g. from `karo sling … --context`) wakes its owner **and**
+  the lead; a guard-paused task keeps its agent up; terminal work scales back to
+  zero. The agent pod now runs a long-lived **claim loop** (`Coordinator.serve`)
+  instead of single-shot, so a teammate that starts before the lead plans still
+  picks up its task. *Remaining connective tissue:* syncing the `AgentTask`
+  projection with the authoritative Postgres tasks store so the reconciler reacts
+  to real run state (today the projection is the signal), plus mailbox-stream
+  routing.
 - **M4 — polish:** `karo export` round-trip hardening, remote `karo attach
   --context` *streaming* against a live cluster, OTel/metrics + gVisor + EKS/GKE
   validation, and **published pipx/PyPI packaging** (install is no-build today,

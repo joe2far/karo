@@ -352,6 +352,52 @@ spec:
     assert ("task.transition", "review") in seen
 
 
+async def test_serve_claim_loop_completes_graph(tmp_path: Path):
+    """Two agent-scoped `serve` loops sharing one store drive the whole graph to
+    completion — even though the teammate loop starts before the lead has planned
+    (the long-lived pod claim loop, v2 §5.1)."""
+    import asyncio
+
+    team = _flat(tmp_path, """\
+metadata: { name: t }
+spec:
+  defaults: { permissionMode: bypass }
+  coordination: { pattern: lead-and-teammates, lead: planner }
+  interaction: { autonomy: autonomous }
+  agents:
+    - { name: planner, harness: sdk }
+    - { name: implementer, harness: sdk }
+""")
+    lead = Coordinator(team, project_dir=tmp_path, agent="planner")
+    mate = Coordinator(team, project_dir=tmp_path, agent="implementer")
+
+    await asyncio.gather(
+        lead.serve("ship it", idle_timeout=3.0, poll_interval=0.02),
+        mate.serve("ship it", idle_timeout=3.0, poll_interval=0.02),
+    )
+
+    tasks = await lead.tasks.list()
+    assert tasks and all(t.state == "done" for t in tasks)
+    assert {t.owner for t in tasks} == {"planner", "implementer"}  # no duplication
+
+
+async def test_serve_returns_on_completion_quickly(tmp_path: Path):
+    """A swarm `serve` with a single autonomous agent completes and returns (it
+    does not spin until idle_timeout once the graph is terminal)."""
+    team = _flat(tmp_path, """\
+metadata: { name: t }
+spec:
+  defaults: { permissionMode: bypass }
+  coordination: { pattern: swarm }
+  interaction: { autonomy: autonomous }
+  agents: [{ name: a, harness: sdk }]
+""")
+    coord = Coordinator(team, project_dir=tmp_path, agent="a")
+    res = await coord.serve("do it", idle_timeout=10.0, poll_interval=0.02, max_cycles=50)
+    assert res.completed
+    assert all(t.state == "done" for t in res.tasks)
+
+
 async def test_budget_hardstop_halts(tmp_path: Path):
     team = _flat(tmp_path, """\
 metadata: { name: t }

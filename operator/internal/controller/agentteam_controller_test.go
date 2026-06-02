@@ -102,3 +102,61 @@ func TestPhaseForPendingThenRunning(t *testing.T) {
 		t.Fatalf("expected Running with active agents, got %q", p)
 	}
 }
+
+func TestReplicasForAgentScaleFromZero(t *testing.T) {
+	yes := true
+	at := team(
+		karov1.Agent{Name: "lead", Harness: "sdk"},
+		karov1.Agent{Name: "worker", Harness: "sdk"},
+	)
+	at.Spec.Runtime = &karov1.RuntimeSpec{ScaleToZero: &yes}
+	lead, worker := at.Spec.Agents[0], at.Spec.Agents[1]
+
+	task := func(owner, state string) karov1.AgentTask {
+		tk := karov1.AgentTask{Spec: karov1.AgentTaskSpec{Team: "t", Owner: owner}}
+		tk.Status.State = state
+		return tk
+	}
+
+	// No tasks: everyone idle.
+	if r := replicasForAgent(at, worker, nil); r != 0 {
+		t.Fatalf("idle worker = %d, want 0", r)
+	}
+
+	// A non-terminal task owned by worker wakes worker AND the lead.
+	tasks := []karov1.AgentTask{task("worker", "pending")}
+	if r := replicasForAgent(at, worker, tasks); r != 1 {
+		t.Fatalf("worker with own task = %d, want 1", r)
+	}
+	if r := replicasForAgent(at, lead, tasks); r != 1 {
+		t.Fatalf("lead with any work = %d, want 1", r)
+	}
+
+	// An unowned task wakes only the lead (it plans/claims), not the worker.
+	un := []karov1.AgentTask{task("", "pending")}
+	if r := replicasForAgent(at, worker, un); r != 0 {
+		t.Fatalf("worker with unowned task = %d, want 0", r)
+	}
+	if r := replicasForAgent(at, lead, un); r != 1 {
+		t.Fatalf("lead with unowned task = %d, want 1", r)
+	}
+
+	// A guard-paused task is non-terminal → the owner stays up (attach target).
+	if r := replicasForAgent(at, worker, []karov1.AgentTask{task("worker", "paused")}); r != 1 {
+		t.Fatalf("worker with paused task = %d, want 1", r)
+	}
+
+	// Terminal task → back to zero.
+	for _, st := range []string{"done", "failed", "cancelled"} {
+		if r := replicasForAgent(at, worker, []karov1.AgentTask{task("worker", st)}); r != 0 {
+			t.Fatalf("worker with %s task = %d, want 0", st, r)
+		}
+	}
+
+	// Scale-to-zero OFF → always 1.
+	no := false
+	at.Spec.Runtime.ScaleToZero = &no
+	if r := replicasForAgent(at, worker, nil); r != 1 {
+		t.Fatalf("non-scale-to-zero worker = %d, want 1", r)
+	}
+}

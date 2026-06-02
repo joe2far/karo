@@ -9,6 +9,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	karov1 "github.com/joe2far/karo/operator/api/v1"
@@ -69,6 +70,69 @@ func scaleToZero(team *karov1.AgentTeam) bool {
 		return true
 	}
 	return *team.Spec.Runtime.ScaleToZero
+}
+
+// terminalTaskStates are the AgentTask states that need no running pod.
+var terminalTaskStates = map[string]bool{"done": true, "failed": true, "cancelled": true}
+
+// taskOwner is the agent a task belongs to (status wins over spec once assigned).
+func taskOwner(t *karov1.AgentTask) string {
+	if t.Status.Owner != "" {
+		return t.Status.Owner
+	}
+	return t.Spec.Owner
+}
+
+// taskState defaults a blank projection to pending (the AgentTask controller
+// stamps the same default).
+func taskState(t *karov1.AgentTask) string {
+	if t.Status.State == "" {
+		return "pending"
+	}
+	return t.Status.State
+}
+
+// replicasForAgent is the scale-from-zero decision (v2 §5.1). With scale-to-zero
+// off, every agent runs (1). Otherwise an agent is woken (1) when a non-terminal
+// AgentTask is owned by it — and the lead is woken whenever *any* work exists, so
+// it can plan/claim and hand unowned tasks out. Guard-paused tasks are
+// non-terminal, so an agent awaiting attach stays up (attach always has a
+// target). No work → 0 (the pod is reclaimed).
+func replicasForAgent(team *karov1.AgentTeam, agent karov1.Agent, tasks []karov1.AgentTask) int32 {
+	if !scaleToZero(team) {
+		return 1
+	}
+	anyWork := false
+	for i := range tasks {
+		if terminalTaskStates[taskState(&tasks[i])] {
+			continue
+		}
+		anyWork = true
+		if taskOwner(&tasks[i]) == agent.Name {
+			return 1
+		}
+	}
+	if anyWork && agent.Name == team.Spec.Coordination.Lead {
+		return 1
+	}
+	return 0
+}
+
+// teamTasks lists the AgentTask projections in the team's namespace that belong
+// to this team (the scale-from-zero work signal; `karo sling --context` and the
+// pods' projection writes land here).
+func (r *AgentTeamReconciler) teamTasks(ctx context.Context, team *karov1.AgentTeam) ([]karov1.AgentTask, error) {
+	var all karov1.AgentTaskList
+	if err := r.List(ctx, &all, client.InNamespace(team.Namespace)); err != nil {
+		return nil, err
+	}
+	out := make([]karov1.AgentTask, 0, len(all.Items))
+	for i := range all.Items {
+		if all.Items[i].Spec.Team == team.Name {
+			out = append(out, all.Items[i])
+		}
+	}
+	return out, nil
 }
 
 // agentLabels are the common selector/identity labels for an agent workload.
@@ -259,8 +323,16 @@ func (r *AgentTeamReconciler) provisionAgents(ctx context.Context, team *karov1.
 		return active, fmt.Errorf("team configmap: %w", err)
 	}
 
+	// The scale-from-zero work signal: non-terminal AgentTasks in the namespace.
+	tasks, err := r.teamTasks(ctx, team)
+	if err != nil {
+		return active, fmt.Errorf("list tasks: %w", err)
+	}
+
 	for _, agent := range team.Spec.Agents {
+		replicas := replicasForAgent(team, agent, tasks)
 		dep := agentDeployment(team, agent)
+		dep.Spec.Replicas = &replicas
 		desired := dep.Spec.DeepCopy()
 		if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, dep, func() error {
 			dep.Labels = agentLabels(team, agent)

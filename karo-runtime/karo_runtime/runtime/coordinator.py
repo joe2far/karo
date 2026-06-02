@@ -11,6 +11,7 @@ the same loop against Redis/Postgres stores instead of file stores.
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -33,6 +34,7 @@ class RunResult:
     halted: bool = False
     halt_reason: str = ""
     paused_agents: list[str] = field(default_factory=list)
+    turns: int = 0  # turns this pass executed (0 = nothing claimable; used by serve())
 
     @property
     def completed(self) -> bool:
@@ -320,7 +322,48 @@ class Coordinator:
             self.run_id, all_tasks,
             halted=halted, halt_reason=halt_reason,
             paused_agents=sorted(set(paused)),
+            turns=self._turns,
         )
+
+    async def serve(
+        self,
+        objective: str,
+        *,
+        idle_timeout: Optional[float] = 300.0,
+        poll_interval: float = 1.0,
+        max_cycles: Optional[int] = None,
+    ) -> RunResult:
+        """Long-lived pod claim loop (v2 §5.1).
+
+        ``run()`` drains the work this pod can currently claim and returns; on a
+        cluster a teammate pod may start *before* the lead has planned (so there
+        is nothing to claim yet). ``serve`` repeats ``run()`` — polling while idle
+        — so late work is picked up. It exits when the task graph is complete (the
+        operator then scales the pod to zero), when halted (budget), or after
+        ``idle_timeout`` with no claimable work (a missing/dead lead ⇒ the
+        Deployment restarts the pod and it retries). ``max_cycles`` bounds it for
+        tests.
+        """
+        idle = 0.0
+        cycles = 0
+        res = await self.run(objective)
+        while True:
+            cycles += 1
+            # All tasks terminal (and there *are* tasks) → the graph is done.
+            if res.tasks and res.completed:
+                return res
+            if res.halted:
+                return res
+            if max_cycles is not None and cycles >= max_cycles:
+                return res
+            if res.turns > 0:
+                idle = 0.0  # made progress; reset the idle clock
+            else:
+                idle += poll_interval
+                if idle_timeout is not None and idle >= idle_timeout:
+                    return res
+            await asyncio.sleep(poll_interval)
+            res = await self.run(objective)
 
     # -- run helpers ------------------------------------------------------ #
     def _budget_gate(self, owner: str, text: str):

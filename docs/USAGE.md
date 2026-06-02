@@ -206,8 +206,9 @@ karo sling pm-team/deploy-approver "approve JIRA-789" --context kind-karo
 
 Use `--dry-run` to print the `AgentTask` manifest without applying it. This needs
 the KARO v2 operator installed and the team deployed to that namespace (via
-`karo export` + `kubectl apply`, §8). Scale-from-zero is an operator roadmap item,
-so a fully idle team may leave the task `pending` until a pod claims it.
+`karo export` + `kubectl apply`, §8). The operator **scales the team from zero**
+on the new task: it wakes the task's owner agent and the lead, the agent pods run
+a long-lived claim loop, and the team scales back to zero when the work is done.
 
 ---
 
