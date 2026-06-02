@@ -116,6 +116,32 @@ while the CRD requires `agents` `minItems:1` — a direct validation disagreemen
 `Backend.kind` enums differ (Go `redis;postgres;sqlite;file` vs schema
 `file;sqlite;redis;none`).
 
+## 0.4b Post-fix status (Phase 2 — updated states)
+
+After the M0 fixes (branch `claude/karo-m0-review-WqdmP`; see `02-fixplan.md`):
+
+| # | M0 item | Before | After | What changed |
+|---|---|---|---|---|
+| 1 | SoT JSON Schema + if/then | P | **T** | `if/then` for coordination rules injected (`schema_export.py`); regenerated; drift gate fixed (B1) |
+| 4 | Validator + cross-field on cluster | P | **T** | controller `validateTeam` mirrors §4.3; CRD has XValidation |
+| 5b | Backend-agnostic conformance test | M | **T** | `tests/store_contract.py` `ALL_BACKENDS`; suite parametrized; M1 redis/pg drop in |
+| 7 | CLI compile | P | **T** | yaml mode fixed (B2) + regression test |
+| 8b | Go types vs schema | M | **T** | full spec body modeled; `schema_parity_test.go` enforces Go⇄schema |
+| 8d | apply → Pending | M | **T** | `phaseFor` sets Pending pre-provision + test |
+| 9 | CI drift schema⇄Go⇄models | M | **T** | B1 fixed; Go⇄schema bridge now exists (parity test under `go test`) |
+| 3b/3d | include / interpolation tests | U | **T** | `tests/test_loader.py` |
+| + | folder==flat round-trip | M | **T** | `tests/test_roundtrip.py` |
+| F9 | lint | ⚠️16 | **clean** | ruff 0 findings |
+
+**Green gate:** ruff clean · pytest 54 (runtime) + 10 (cli) · `go build/vet/test`
+pass · golangci-lint 0 · schema drift PASS · Go⇄schema parity PASS ·
+controller-gen drift PASS. Verification log appended to `00-build.log`.
+
+**Still open (deferred to M1/M2 by design, not regressions):** adapter `attach()`
+real seam; Coordinator wiring to atomic `claim()`; `AgentContext` accessor
+injection; diagnostic line precision; envtest reconcile + kind e2e; per-agent
+budget split. Tracked in `05-verdict.md`.
+
 ## 0.5 Bottom line for Phase 0
 
 The foundation is **real and largely working on the Python side** (56 tests pass,
