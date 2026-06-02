@@ -14,15 +14,15 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 from ..harness import AgentContext, get_adapter
 from ..harness.base import Message as HarnessMessage
 from ..spec.models import AgentTeam, Autonomy, PauseOn
-from ..stores.base import Message, Task, TaskState, TERMINAL_STATES
+from ..stores.base import Task, TaskState, TERMINAL_STATES
 from ..stores.file import FileMailboxStore, FileMemoryStore, FileTaskStore
 from .budget import FileBudgetMeter, OnExceed
-from .events import EventLog, EventType, digest
+from .events import EventLog, EventType
 from .patterns import plan_tasks
 
 

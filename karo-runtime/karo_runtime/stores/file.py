@@ -22,7 +22,6 @@ from .base import (
     Message,
     Task,
     TaskState,
-    TERMINAL_STATES,
 )
 
 
@@ -138,7 +137,7 @@ class FileMailboxStore:
         box = self._box(agent)
         if not box.exists():
             return []
-        msgs = [Message.from_dict(json.loads(l)) for l in box.read_text("utf-8").splitlines() if l]
+        msgs = [Message.from_dict(json.loads(ln)) for ln in box.read_text("utf-8").splitlines() if ln]
         return [m for m in msgs if not m.read] if unread_only else msgs
 
     async def mark_read(self, agent: str, msg_id: str) -> None:
@@ -146,7 +145,7 @@ class FileMailboxStore:
             box = self._box(agent)
             if not box.exists():
                 return
-            msgs = [Message.from_dict(json.loads(l)) for l in box.read_text("utf-8").splitlines() if l]
+            msgs = [Message.from_dict(json.loads(ln)) for ln in box.read_text("utf-8").splitlines() if ln]
             for m in msgs:
                 if m.id == msg_id:
                     m.read = True
@@ -181,7 +180,7 @@ class FileMemoryStore:
         log = self._log(scope)
         if not log.exists():
             return []
-        return [MemoryRecord.from_dict(json.loads(l)) for l in log.read_text("utf-8").splitlines() if l]
+        return [MemoryRecord.from_dict(json.loads(ln)) for ln in log.read_text("utf-8").splitlines() if ln]
 
     async def get(self, scope: str, key: str) -> Any:
         latest = None
@@ -205,7 +204,7 @@ class FileMemoryStore:
             return
         with _flock(self._lock):
             for log in self.root.glob("*.jsonl"):
-                recs = [MemoryRecord.from_dict(json.loads(l)) for l in log.read_text("utf-8").splitlines() if l]
+                recs = [MemoryRecord.from_dict(json.loads(ln)) for ln in log.read_text("utf-8").splitlines() if ln]
                 if len(recs) <= max_items:
                     continue
                 # aggressive / lru: keep the most-recent maxItems.

@@ -22,10 +22,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import yaml
 
 from . import frontmatter
-from .loader import LoadError, apply_includes, deep_merge, load_yaml
+from .loader import LoadError, apply_includes, load_yaml
 from .models import AgentTeam
 
 
