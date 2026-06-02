@@ -210,6 +210,102 @@ async def test_context_accessors_injected(lead_crew: Path):
     assert ctx.budget is coord.budget
 
 
+async def test_cluster_pods_do_not_double_plan(tmp_path: Path):
+    """Two pods sharing one task store must not duplicate the task graph: only the
+    lead pod plans (the multi-pod double-plan guard)."""
+    team = _flat(tmp_path, """\
+metadata: { name: t }
+spec:
+  defaults: { permissionMode: bypass }
+  coordination: { pattern: lead-and-teammates, lead: planner }
+  interaction: { autonomy: autonomous }
+  agents:
+    - { name: planner, harness: sdk }
+    - { name: implementer, harness: sdk }
+""")
+    # A non-lead pod runs first — it must NOT create any tasks.
+    pod_impl = Coordinator(team, project_dir=tmp_path, agent="implementer")
+    await pod_impl.run("obj")
+    assert len(await pod_impl.tasks.list()) == 0
+
+    # The lead pod plans + drives its own work.
+    pod_plan = Coordinator(team, project_dir=tmp_path, agent="planner")
+    await pod_plan.run("obj")
+    after_plan = await pod_plan.tasks.list()
+    assert len(after_plan) == 2  # implementer task + planner synthesis, once
+
+    # The implementer pod runs again and claims its task — no new tasks created.
+    await pod_impl.run("obj")
+    final = await pod_impl.tasks.list()
+    assert len(final) == 2  # no duplication
+    assert {t.owner for t in final} == {"planner", "implementer"}
+
+
+async def test_resume_after_partial_run_completes(tmp_path: Path):
+    """Kill mid-run (max_turns) then resume from persisted state → completes (the
+    durable-resume invariant; the production form of kill-all-pods → reconcile)."""
+    team = _flat(tmp_path, """\
+metadata: { name: t }
+spec:
+  defaults: { permissionMode: bypass }
+  coordination: { pattern: pipeline, pipeline: { stages: [a, b, c] } }
+  interaction: { autonomy: autonomous }
+  agents:
+    - { name: a, harness: sdk }
+    - { name: b, harness: sdk }
+    - { name: c, harness: sdk }
+""")
+    first = await Coordinator(team, project_dir=tmp_path, max_turns=1).run("obj")
+    assert not first.completed  # stopped early
+
+    # A fresh Coordinator (simulating a restart) resumes the persisted tasks.
+    resumed = await Coordinator(team, project_dir=tmp_path).run("obj")
+    assert resumed.completed
+    assert all(t.state == "done" for t in resumed.tasks)
+
+
+async def test_budget_pause_resume_does_not_fake_guard(tmp_path: Path):
+    """A budget pause is re-gated on resume — release_paused must NOT mark it as a
+    satisfied guard (the two halt reasons are distinct)."""
+    team = _flat(tmp_path, """\
+metadata: { name: t }
+spec:
+  defaults: { permissionMode: bypass }
+  budgets: { team: { provider: anthropic, limit: 1, window: session, onExceed: pause } }
+  coordination: { pattern: swarm }
+  interaction: { autonomy: supervised }
+  agents: [{ name: a, harness: sdk }]
+""")
+    coord = Coordinator(team, project_dir=tmp_path)
+    res = await coord.run("a long objective exceeding one token")
+    paused = [t for t in res.tasks if t.state == "paused"]
+    assert paused and paused[0].pause_reason == "budget"
+    await coord.release_paused()
+    t = (await coord.tasks.list())[0]
+    assert t.state == "pending"
+    assert t.guard_released is False  # budget pause did not fake a guard release
+
+
+async def test_review_state_is_entered(tmp_path: Path):
+    """Assert the task actually transitions through `review` (event evidence)."""
+    seen: list[tuple] = []
+    team = _flat(tmp_path, """\
+metadata: { name: t }
+spec:
+  defaults: { permissionMode: bypass }
+  coordination: { pattern: lead-and-teammates, lead: planner }
+  interaction: { autonomy: autonomous }
+  agents:
+    - { name: planner, harness: sdk }
+    - { name: implementer, harness: sdk }
+    - { name: reviewer, harness: sdk }
+""")
+    coord = Coordinator(team, project_dir=tmp_path,
+                        on_event=lambda e: seen.append((e.type, e.fields.get("to_state"))))
+    await coord.run("build it")
+    assert ("task.transition", "review") in seen  # the review state was entered
+
+
 async def test_budget_hardstop_halts(tmp_path: Path):
     team = _flat(tmp_path, """\
 metadata: { name: t }

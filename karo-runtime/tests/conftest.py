@@ -4,6 +4,19 @@ from pathlib import Path
 import pytest
 
 
+@pytest.fixture(autouse=True)
+async def _close_pg_pools():
+    """Close shared Postgres pools after each test (pytest-asyncio gives each
+    test its own event loop; a pool bound to a finished loop must not leak)."""
+    yield
+    try:
+        from karo_runtime.stores.postgres import close_pools
+
+        await close_pools()
+    except Exception:
+        pass
+
+
 @pytest.fixture
 def lead_crew(tmp_path: Path) -> Path:
     """A minimal valid lead-and-teammates folder."""

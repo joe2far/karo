@@ -75,3 +75,49 @@ def test_folder_and_flat_are_canonically_equivalent(tmp_path: Path):
     folder_proj = parity_projection(compile_folder(folder).team)
     flat_proj = parity_projection(compile_flat(flat).team)
     assert folder_proj == flat_proj
+
+
+def test_operator_projected_camelcase_doc_loads(tmp_path: Path):
+    """The operator projects the team as a camelCase JSON doc (teamDocJSON in
+    provisioner.go) that the agent pod loads via compile_flat. This guards the
+    Go-json-tag ⇄ pydantic-alias compatibility: every camelCase field below must
+    survive the round-trip, or the cluster pod would silently drop config."""
+    import json
+
+    doc = {
+        "apiVersion": "karo.dev/v1",
+        "kind": "AgentTeam",
+        "metadata": {"name": "crew"},
+        "spec": {
+            "defaults": {"harness": "sdk", "permissionMode": "bypass",
+                         "workingDir": "./ws", "model": {"provider": "anthropic", "id": "m"}},
+            "budgets": {"team": {"provider": "anthropic", "limit": 5000000,
+                                 "window": "daily", "onExceed": "pause"}, "perAgent": True},
+            "resources": {"mcpServers": [{"name": "github", "transport": "stdio",
+                                          "command": ["gh"]}],
+                          "skills": [{"source": "./skills/k"}],
+                          "tools": [{"name": "lk", "module": "t.py:lk"}]},
+            "memory": {"backend": "file", "scope": "team",
+                       "retention": {"maxItems": 10, "gcStrategy": "lru"}},
+            "coordination": {"pattern": "pipeline",
+                             "pipeline": {"stages": ["a", "b"]},
+                             "mailbox": {"backend": "file", "hardLimit": 99},
+                             "taskLayer": {"backend": "file", "resumable": True}},
+            "interaction": {"attachable": True, "autonomy": "autonomous",
+                            "pauseTimeout": 0},
+            "agents": [
+                {"name": "a", "harness": "sdk", "permissionMode": "bypass"},
+                {"name": "b", "harness": "sdk", "budget": {"share": 0.5}},
+            ],
+        },
+    }
+    path = tmp_path / "team.json"
+    path.write_text(json.dumps(doc), encoding="utf-8")
+    team = compile_flat(path).team  # must not raise / drop fields
+
+    assert team.spec.coordination.mailbox.hard_limit == 99
+    assert team.spec.coordination.task_layer.resumable is True
+    assert team.spec.resources.mcp_servers[0].name == "github"
+    assert team.spec.memory.retention.max_items == 10
+    assert team.spec.budgets.per_agent is True
+    assert team.spec.agents[1].budget.share == 0.5

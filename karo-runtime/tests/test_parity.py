@@ -121,13 +121,16 @@ def test_parity_checkpoint_a_runtime(tmp_path):
         PostgresTaskStore,
     )
 
+    import uuid
+
+    sfx = uuid.uuid4().hex[:8]  # fresh tables per run (PG tables persist)
     team = compile_flat(FIXTURE).team
     local = _signature(team, tmp_path / "local")
     cluster = _signature(
         team,
         tmp_path / "cluster",
-        tasks=PostgresTaskStore(pg_dsn, table="parity_tasks"),
-        mailbox=PostgresMailboxStore(pg_dsn, table="parity_mail"),
-        memory=PostgresMemoryStore(pg_dsn, table="parity_mem"),
+        tasks=PostgresTaskStore(pg_dsn, table=f"parity_tasks_{sfx}"),
+        mailbox=PostgresMailboxStore(pg_dsn, table=f"parity_mail_{sfx}"),
+        memory=PostgresMemoryStore(pg_dsn, table=f"parity_mem_{sfx}"),
     )
     assert local == cluster, "local and cluster task graphs diverged — parity broken"

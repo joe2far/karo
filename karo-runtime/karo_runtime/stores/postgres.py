@@ -33,6 +33,31 @@ def _connect_fn():
     return asyncpg
 
 
+# One shared connection pool per DSN — tasks/memory/mailbox in a pod share it so
+# a single agent pod uses one small pool, not three (avoids connection
+# exhaustion under N pods; v2 §6). Keyed by DSN; created lazily on the running
+# loop. ``close_pools()`` tears them down (used by tests between event loops).
+_POOLS: dict[str, object] = {}
+
+
+async def _get_pool(dsn: str):
+    pool = _POOLS.get(dsn)
+    if pool is None:
+        pool = await _connect_fn().create_pool(dsn, min_size=1, max_size=5)
+        _POOLS[dsn] = pool
+    return pool
+
+
+async def close_pools() -> None:
+    """Close and forget all shared pools (call between event loops / on shutdown)."""
+    for pool in list(_POOLS.values()):
+        try:
+            await pool.close()  # type: ignore[attr-defined]
+        except Exception:  # pragma: no cover - best-effort teardown
+            pass
+    _POOLS.clear()
+
+
 class PostgresTaskStore:
     """Durable task store. One table per ``namespace`` (default ``tasks``)."""
 
@@ -40,12 +65,12 @@ class PostgresTaskStore:
         self.dsn = dsn
         self.table = table
         self._asyncpg = _connect_fn()
-        self._pool = None
+        self._ready = False
 
     async def _ensure(self):
-        if self._pool is None:
-            self._pool = await self._asyncpg.create_pool(self.dsn)
-            async with self._pool.acquire() as con:
+        pool = await _get_pool(self.dsn)
+        if not self._ready:
+            async with pool.acquire() as con:
                 await con.execute(
                     f"""
                     CREATE TABLE IF NOT EXISTS {self.table} (
@@ -59,7 +84,8 @@ class PostgresTaskStore:
                     )
                     """
                 )
-        return self._pool
+            self._ready = True
+        return pool
 
     async def create(self, task: Task) -> Task:
         pool = await self._ensure()
@@ -157,12 +183,12 @@ class PostgresMemoryStore:
         self.dsn = dsn
         self.table = table
         self._asyncpg = _connect_fn()
-        self._pool = None
+        self._ready = False
 
     async def _ensure(self):
-        if self._pool is None:
-            self._pool = await self._asyncpg.create_pool(self.dsn)
-            async with self._pool.acquire() as con:
+        pool = await _get_pool(self.dsn)
+        if not self._ready:
+            async with pool.acquire() as con:
                 await con.execute(
                     f"""
                     CREATE TABLE IF NOT EXISTS {self.table} (
@@ -176,7 +202,8 @@ class PostgresMemoryStore:
                     )
                     """
                 )
-        return self._pool
+            self._ready = True
+        return pool
 
     async def put(self, scope: str, key: str, value: Any, tags=None) -> None:
         rec = MemoryRecord(scope=scope, key=key, value=value, tags=list(tags or []))
@@ -251,12 +278,12 @@ class PostgresMailboxStore:
         self.hard_limit = hard_limit
         self.table = table
         self._asyncpg = _connect_fn()
-        self._pool = None
+        self._ready = False
 
     async def _ensure(self):
-        if self._pool is None:
-            self._pool = await self._asyncpg.create_pool(self.dsn)
-            async with self._pool.acquire() as con:
+        pool = await _get_pool(self.dsn)
+        if not self._ready:
+            async with pool.acquire() as con:
                 await con.execute(
                     f"""
                     CREATE TABLE IF NOT EXISTS {self.table} (
@@ -270,7 +297,8 @@ class PostgresMailboxStore:
                     )
                     """
                 )
-        return self._pool
+            self._ready = True
+        return pool
 
     async def send(self, message: Message) -> Message:
         pool = await self._ensure()

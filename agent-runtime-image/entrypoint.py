@@ -116,7 +116,9 @@ def main() -> int:
 
     from karo_runtime.runtime.coordinator import Coordinator
 
-    coord = Coordinator(team, run_id=run_id)
+    # agent=agent_name scopes this pod to its own work and ensures only the lead
+    # pod plans — N pods sharing one Postgres never duplicate the task graph.
+    coord = Coordinator(team, run_id=run_id, agent=agent_name)
 
     # Swap in the cluster stores when DSNs are present; otherwise the Coordinator
     # keeps its default file stores (identical Protocols, v2 §4.2).

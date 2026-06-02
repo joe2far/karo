@@ -49,6 +49,7 @@ class Coordinator:
         dry_run: bool = False,
         autonomy_override: Optional[str] = None,
         max_turns: Optional[int] = None,
+        agent: Optional[str] = None,
         on_event=None,
     ):
         self.team = team
@@ -57,6 +58,11 @@ class Coordinator:
         self.dry_run = dry_run
         self.autonomy_override = autonomy_override
         self.max_turns = max_turns
+        # When set, this Coordinator drives ONE agent (a cluster pod): it claims
+        # only that agent's tasks, and only the lead agent's pod plans — so N pods
+        # sharing one Postgres never duplicate the task graph. None = local
+        # single-process: plans once and drives all agents.
+        self.agent = agent
         self._agents = {a.name: a for a in team.spec.agents}
 
         karo = self.dir / ".karo"
@@ -167,7 +173,15 @@ class Coordinator:
         its own agent, so file (local) and Postgres (cluster) produce an identical
         task graph — the parity invariant (CLI §11, v2 §6).
         """
-        tasks = await self.plan(objective)
+        lead = self.team.spec.coordination.lead
+        planner_agent = lead or (self.team.spec.agents[0].name if self.team.spec.agents else None)
+
+        # Leader-elected planning: a cluster pod only plans if it is the lead
+        # (planner); all other pods just claim. Local (agent=None) always plans.
+        if self.agent is None or self.agent == planner_agent:
+            tasks = await self.plan(objective)
+        else:
+            tasks = await self.tasks.list()
         if self.dry_run:
             return RunResult(self.run_id, tasks)
 
@@ -175,8 +189,8 @@ class Coordinator:
         self._turns = 0
         halted = False
         halt_reason = ""
-        agents = [a.name for a in self.team.spec.agents]
-        lead = self.team.spec.coordination.lead
+        # A pod (agent set) claims only its own work; local drives all agents.
+        agents = [self.agent] if self.agent else [a.name for a in self.team.spec.agents]
 
         while True:
             if self.max_turns is not None and self._turns >= self.max_turns:
@@ -200,6 +214,7 @@ class Coordinator:
             # human attach. Released by `karo attach --continue` (§13).
             pb = self._pause_before(owner)
             if pb and not task.guard_released and self._autonomy(owner) != Autonomy.autonomous.value:
+                task.pause_reason = "guard:pauseBefore"
                 await self._transition(task, TaskState.paused.value)
                 paused.append(owner)
                 self.events.emit(EventType.guard_pause.value, agent=owner,
@@ -214,6 +229,7 @@ class Coordinator:
                     halted, halt_reason = True, "budget-hardstop"
                     break
                 if decision.mode == OnExceed.pause.value:
+                    task.pause_reason = "budget"
                     await self._transition(task, TaskState.paused.value)
                     paused.append(owner)
                     self.events.emit(EventType.guard_pause.value, agent=owner,
@@ -249,6 +265,7 @@ class Coordinator:
 
             # Guard: pauseOn taskComplete (supervised only).
             if self._should_pause_on(owner, PauseOn.task_complete.value):
+                task.pause_reason = "guard:pauseOn"
                 await self._transition(task, TaskState.paused.value)
                 paused.append(owner)
                 self.events.emit(EventType.guard_pause.value, agent=owner,
@@ -329,7 +346,11 @@ class Coordinator:
         for t in await self.tasks.list(state=TaskState.paused.value):
             if agent and t.owner != agent:
                 continue
-            t.guard_released = True
+            # A guard pause is cleared by the human attaching; a budget pause is
+            # simply re-gated on the next run (do not fake a guard release).
+            if (t.pause_reason or "").startswith("guard"):
+                t.guard_released = True
+            t.pause_reason = None
             await self._transition(t, TaskState.pending.value)
             released.append(t.id)
         return released

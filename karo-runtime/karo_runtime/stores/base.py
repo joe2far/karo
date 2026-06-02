@@ -52,6 +52,10 @@ class Task:
     # Set once a pauseBefore guard has been satisfied (via attach/continue) so the
     # task is not re-paused on resume; persisted so resume across processes works.
     guard_released: bool = False
+    # Why the task is paused: "guard:pauseBefore" | "guard:pauseOn" | "budget".
+    # Distinguishes a guard pause (released by attach) from a budget pause
+    # (re-gated on resume) so they are not conflated.
+    pause_reason: Optional[str] = None
     result: Optional[dict[str, Any]] = None
     id: str = field(default_factory=lambda: _id("task"))
     created: float = field(default_factory=_now)

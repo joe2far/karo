@@ -23,6 +23,7 @@ from __future__ import annotations
 import importlib.util
 import os
 import re
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -39,8 +40,14 @@ def _have(mod: str) -> bool:
 
 
 def _ns(tmp_path: Path) -> str:
-    """A unique, SQL/redis-safe namespace per test (isolates parallel runs)."""
-    return "karo_" + re.sub(r"[^a-zA-Z0-9]", "_", tmp_path.name)[-40:]
+    """A unique, SQL/redis-safe namespace per test *invocation*.
+
+    Includes a random suffix because pytest's tmp_path basenames are stable
+    across runs while Postgres tables persist — without it, a rerun would see the
+    prior run's rows in a same-named table.
+    """
+    base = re.sub(r"[^a-zA-Z0-9]", "_", tmp_path.name)[-24:]
+    return f"karo_{base}_{uuid.uuid4().hex[:8]}"
 
 
 @dataclass
